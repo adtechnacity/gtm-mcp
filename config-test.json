@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "test": {
+      "command": "wsl",
+      "args": ["-e", "bash", "-c", "cd /home/jasonnam/dev/mcp-for-gtm && source $HOME/.local/bin/env && uv run python test_mcp_server.py"]
+    }
+  }
+}
