@@ -75,6 +75,8 @@ async def _resolve_workspace_id(client, account_id: str, container_id: str, work
     Results are cached per (account, container) pair for the server's lifetime.
     """
     if workspace_id != "1":
+        if not str(workspace_id).strip().isdigit():
+            raise ValueError(f"Invalid workspace_id: '{workspace_id}'. Must be a numeric string.")
         return workspace_id
 
     cache_key = (account_id, container_id)
@@ -88,12 +90,14 @@ async def _resolve_workspace_id(client, account_id: str, container_id: str, work
     workspaces = result.get("workspace", [])
     if not workspaces:
         logger.warning("No workspaces found for container %s; falling back to workspace_id='%s'", container_id, workspace_id)
+        _workspace_cache[cache_key] = workspace_id
         return workspace_id
 
     # Check if workspace "1" actually exists
     ws_ids = [w.get("workspaceId") for w in workspaces if w.get("workspaceId")]
     if not ws_ids:
         logger.warning("No valid workspace IDs found for container %s", container_id)
+        _workspace_cache[cache_key] = workspace_id
         return workspace_id
     if "1" in ws_ids:
         _workspace_cache[cache_key] = "1"
