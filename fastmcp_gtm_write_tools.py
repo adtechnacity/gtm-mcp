@@ -238,6 +238,9 @@ async def create_datalayer_variables_batch(account_id: str, container_id: str, v
             return {"status": "error", "message": error}
         if len(variables) > MAX_BATCH_SIZE:
             return {"status": "error", "message": f"Batch size {len(variables)} exceeds limit of {MAX_BATCH_SIZE}."}
+        for i, var in enumerate(variables):
+            if not isinstance(var, dict) or not var.get('name') or not var.get('key'):
+                return {"status": "error", "message": f"Variable at index {i} must have non-empty 'name' and 'key' strings."}
 
         client = get_gtm_client()
         workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)

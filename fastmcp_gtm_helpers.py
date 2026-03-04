@@ -220,6 +220,10 @@ async def _batch_update_tags(client, path_prefix, tag_ids, mutate_fn,
     """
     if len(tag_ids) > MAX_BATCH_SIZE:
         return {"status": "error", "message": f"Batch size {len(tag_ids)} exceeds limit of {MAX_BATCH_SIZE}."}
+    for tid in tag_ids:
+        error = _validate_gtm_id(tid, "tag_id")
+        if error:
+            return {"status": "error", "message": error}
     results = {"updated": [], "skipped": [], "failed": []}
     for tag_id in tag_ids:
         try:
