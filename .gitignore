@@ -1,3 +1,37 @@
-__pycache__
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
 
-credentials.*
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Credentials
+credentials.json
+token.json
+token.*
+
+# Databases
+*.db
+
+# Backups
+*.backup
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude
+.claude/
