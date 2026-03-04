@@ -5,9 +5,10 @@ An MCP server that exposes Google Tag Manager API v2 as tools for AI agents like
 ## Features
 
 - **21 MCP tools** covering discovery, CRUD, consent management, batch operations, and publishing
-- **OAuth2 authentication** with automatic token refresh
+- **Service account authentication** — headless, no browser flow, works in containers
 - **Template builder** for generating GTM component JSON locally
 - **Batch operations** for bulk consent updates and variable creation
+- **CLI tool** for direct GTM API queries from the command line
 
 ## Setup
 
@@ -27,9 +28,11 @@ pip install -r requirements.txt
 2. Create a new project or select an existing one
 3. Enable the **Tag Manager API** under "APIs & Services" > "Library"
 4. Go to "APIs & Services" > "Credentials"
-5. Click "Create Credentials" > "OAuth 2.0 Client IDs"
-6. Choose "Desktop application"
-7. Download the JSON file and save it as `credentials.json` in this directory
+5. Click "Create Credentials" > "Service Account"
+6. Grant appropriate roles and click "Done"
+7. Click on the service account, go to "Keys" > "Add Key" > "Create new key" > JSON
+8. Download the JSON key file and set the `GOOGLE_APPLICATION_CREDENTIALS` env var to its path
+9. In GTM, go to Admin > User Management and add the service account email with Edit + Publish permissions
 
 ### 3. Configure Your MCP Client
 
@@ -42,8 +45,7 @@ Add the server to your MCP client config (Claude Desktop, Claude Code, etc.):
       "command": "uv",
       "args": ["run", "python", "/path/to/gtm-mcp/fastmcp_gtm_server.py"],
       "env": {
-        "GTM_CREDENTIALS_FILE": "/path/to/gtm-mcp/credentials.json",
-        "GTM_TOKEN_FILE": "/path/to/gtm-mcp/token.json"
+        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account-key.json"
       }
     }
   }
@@ -58,8 +60,7 @@ Or using the installed entry point:
     "gtm": {
       "command": "mcp-gtm-server",
       "env": {
-        "GTM_CREDENTIALS_FILE": "/path/to/credentials.json",
-        "GTM_TOKEN_FILE": "/path/to/token.json"
+        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account-key.json"
       }
     }
   }
@@ -69,7 +70,7 @@ Or using the installed entry point:
 ## Available Tools (21)
 
 ### Discovery
-- `test_gtm_connection` — Verify OAuth2 credentials
+- `test_gtm_connection` — Verify service account credentials
 - `list_gtm_accounts` — List all accessible GTM accounts
 - `list_gtm_containers` — List containers in an account
 - `list_gtm_workspaces` — List workspaces in a container
@@ -101,6 +102,22 @@ Or using the installed entry point:
 
 ### Templates (Local Only)
 - `generate_ga4_template` — Generate GA4 tag JSON without API calls
+
+## CLI Tool
+
+Query GTM directly from the command line (uses the same service account credentials):
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+
+uv run python cli.py list-accounts
+uv run python cli.py list-containers --account_id 123456
+uv run python cli.py list-tags --account_id 123456 --container_id 7890123
+uv run python cli.py list-triggers --account_id 123456 --container_id 7890123
+uv run python cli.py list-variables --account_id 123456 --container_id 7890123
+uv run python cli.py list-workspaces --account_id 123456 --container_id 7890123
+uv run python cli.py get-tag --account_id 123456 --container_id 7890123 --tag_id 42
+```
 
 ## Usage Examples
 
@@ -136,8 +153,9 @@ uv run python fastmcp_gtm_server.py
 ```
 gtm-mcp/
 ├── fastmcp_gtm_server.py  # MCP server (21 tools)
-├── gtm_client_fixed.py    # GTM API client with OAuth2
+├── gtm_client_fixed.py    # GTM API client with service account auth
 ├── gtm_components.py      # Template builder (no API calls)
+├── cli.py                 # CLI tool (7 read-only subcommands)
 ├── pyproject.toml          # Project config & dependencies
 ├── requirements.txt        # pip dependencies
 ├── run_server.sh           # Launch script
@@ -148,7 +166,7 @@ gtm-mcp/
 
 ## Authentication
 
-On first run, the server opens a browser window for OAuth2 authentication. Grant the required permissions (`tagmanager.edit.containers` and `tagmanager.publish`). The token is saved to `token.json` for subsequent runs.
+Uses Google Service Account credentials. Set `GOOGLE_APPLICATION_CREDENTIALS` to the path of your service account JSON key file. The service account must be added as a user in GTM with appropriate permissions (Edit + Publish). No browser flow, no token files — works headless in containers.
 
 ## AI Agent Reference
 

@@ -12,10 +12,13 @@ build/
 venv/
 env/
 
-# Credentials
+# Credentials & service account keys
 credentials.json
 token.json
 token.*
+*service*account*.json
+*-sa-*.json
+*-key.json
 
 # Databases
 *.db

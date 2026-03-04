@@ -2,13 +2,14 @@
 
 ## Architecture
 
-Three core Python files:
+Four Python files:
 
 | File | Role |
 |------|------|
 | `fastmcp_gtm_server.py` | MCP server — 21 `@mcp.tool()` functions exposed to AI agents |
-| `gtm_client_fixed.py` | GTM API client — OAuth2 auth, token refresh, wraps `google-api-python-client` |
+| `gtm_client_fixed.py` | GTM API client — service account auth, wraps `google-api-python-client` |
 | `gtm_components.py` | Local template builders — no API calls, produce JSON dicts for tags/triggers/variables |
+| `cli.py` | CLI entry point — 7 read-only subcommands, prints JSON to stdout |
 
 ## ID Hierarchy
 
@@ -29,16 +30,14 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `GTM_CREDENTIALS_FILE` | `credentials.json` | Path to Google OAuth2 client secrets JSON |
-| `GTM_TOKEN_FILE` | `token.json` | Path to stored OAuth2 token (auto-created on first auth) |
+| `GOOGLE_APPLICATION_CREDENTIALS` | *(required)* | Path to Google service account JSON key file |
 
 ## Auth Flow
 
-1. On first use, `GTMClient` looks for an existing token file
-2. If valid and has required scopes (`tagmanager.edit.containers`, `tagmanager.publish`), uses it
-3. If expired, attempts refresh
-4. If no valid token, launches browser-based OAuth2 flow
-5. Token is saved for subsequent runs
+1. `GTMClient` reads the `GOOGLE_APPLICATION_CREDENTIALS` env var (or accepts `credentials_file` parameter)
+2. Loads service account credentials via `google.oauth2.service_account.Credentials.from_service_account_file()`
+3. Requests scopes: `tagmanager.readonly`, `tagmanager.edit.containers`, `tagmanager.publish`
+4. Builds the `tagmanager` v2 service — no browser, no token file, fully headless
 
 ## Implemented Tools (21)
 
@@ -46,7 +45,7 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 
 | Tool | Description |
 |------|-------------|
-| `test_gtm_connection` | Verify OAuth2 credentials work by listing containers |
+| `test_gtm_connection` | Verify service account credentials work by listing containers |
 | `list_gtm_accounts` | List all accessible GTM accounts |
 | `list_gtm_containers` | List containers in an account |
 | `list_gtm_workspaces` | List workspaces in a container |

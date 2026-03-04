@@ -15,12 +15,11 @@ Run directly:
 Or via entry point:
     mcp-gtm-server
 """
-import asyncio
 import json
 import logging
 import sys
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 # Redirect logging to stderr
 logging.basicConfig(
