@@ -5,6 +5,10 @@ Wraps the Google Tag Manager API v2 using google-api-python-client. Uses
 Google Service Account credentials for headless authentication -- no browser
 flow, no token refresh dance.
 
+All methods are synchronous (google-api-python-client is blocking). Callers
+in async contexts should use asyncio.to_thread() to avoid blocking the event
+loop.
+
 Scopes:
     - tagmanager.readonly: Read-only access to GTM resources
     - tagmanager.edit.containers: Read-write access to GTM containers
@@ -75,7 +79,7 @@ class GTMClient:
     # Write operations
     # ------------------------------------------------------------------
 
-    async def create_tag(self, account_id: str, container_id: str, name: str, tag_type: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    def create_tag(self, account_id: str, container_id: str, name: str, tag_type: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         parent = self._workspace_parent(account_id, container_id)
         tag_body = {
             'name': name,
@@ -90,7 +94,7 @@ class GTMClient:
         logger.info("Tag created successfully: %s", result.get('name', 'Unknown'))
         return result
 
-    async def create_trigger(self, account_id: str, container_id: str, name: str, trigger_type: str, filters: List[Dict[str, Any]]) -> Dict[str, Any]:
+    def create_trigger(self, account_id: str, container_id: str, name: str, trigger_type: str, filters: List[Dict[str, Any]]) -> Dict[str, Any]:
         parent = self._workspace_parent(account_id, container_id)
         trigger_body = {
             'name': name,
@@ -105,7 +109,7 @@ class GTMClient:
         logger.info("Trigger created successfully: %s", result.get('name', 'Unknown'))
         return result
 
-    async def create_variable(self, account_id: str, container_id: str, name: str, variable_type: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
+    def create_variable(self, account_id: str, container_id: str, name: str, variable_type: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
         parent = self._workspace_parent(account_id, container_id)
         variable_body = {
             'name': name,
@@ -124,7 +128,7 @@ class GTMClient:
     # Read operations
     # ------------------------------------------------------------------
 
-    async def list_containers(self, account_id: str) -> List[Dict[str, Any]]:
+    def list_containers(self, account_id: str) -> List[Dict[str, Any]]:
         parent = f"accounts/{account_id}"
         logger.info("Listing containers for account %s", account_id)
         result = self.service.accounts().containers().list(parent=parent).execute()
@@ -132,7 +136,7 @@ class GTMClient:
         logger.info("Found %d containers", len(containers))
         return containers
 
-    async def get_container(self, account_id: str, container_id: str) -> Dict[str, Any]:
+    def get_container(self, account_id: str, container_id: str) -> Dict[str, Any]:
         path = f"accounts/{account_id}/containers/{container_id}"
         logger.info("Getting container %s", container_id)
         result = self.service.accounts().containers().get(path=path).execute()
@@ -143,7 +147,7 @@ class GTMClient:
     # Publish
     # ------------------------------------------------------------------
 
-    async def publish_version(self, account_id: str, container_id: str, version_name: str, version_notes: str = "", workspace_id: str = "1") -> Dict[str, Any]:
+    def publish_version(self, account_id: str, container_id: str, version_name: str, version_notes: str = "", workspace_id: str = "1") -> Dict[str, Any]:
         parent = self._workspace_parent(account_id, container_id, workspace_id)
         version_body = {
             'name': version_name,
@@ -155,7 +159,13 @@ class GTMClient:
             path=parent, body=version_body
         ).execute()
 
-        version_path = create_result['path']
+        version_path = create_result.get('containerVersion', {}).get('path')
+        if not version_path:
+            raise RuntimeError(
+                f"Version creation succeeded but response missing containerVersion.path: "
+                f"{create_result}"
+            )
+
         logger.info("Publishing version: %s", version_name)
         publish_result = self.service.accounts().containers().versions().publish(
             path=version_path

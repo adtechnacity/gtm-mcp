@@ -15,6 +15,7 @@ Run directly:
 Or via entry point:
     mcp-gtm-server
 """
+import asyncio
 import json
 import logging
 import sys
@@ -50,6 +51,12 @@ def get_gtm_client():
             raise Exception(f"GTM authentication failed: {e}. Please ensure GOOGLE_APPLICATION_CREDENTIALS is set.")
     return gtm_client
 
+
+async def _run(request):
+    """Run a blocking Google API request in a thread pool."""
+    return await asyncio.to_thread(request.execute)
+
+
 # Load GTM components
 try:
     from gtm_components import GTMComponentTemplates, GTMWorkflowBuilder
@@ -72,7 +79,7 @@ async def test_gtm_connection(account_id: str) -> dict:
     """
     try:
         client = get_gtm_client()
-        containers = await client.list_containers(account_id)
+        containers = await asyncio.to_thread(client.list_containers, account_id)
 
         result = {
             "status": "success",
@@ -101,7 +108,7 @@ async def list_gtm_containers(account_id: str) -> dict:
     """
     try:
         client = get_gtm_client()
-        containers = await client.list_containers(account_id)
+        containers = await asyncio.to_thread(client.list_containers, account_id)
 
         result = {
             "status": "success",
@@ -156,7 +163,8 @@ async def create_ga4_setup(account_id: str, container_id: str, measurement_id: s
         # Create variables first
         for variable in components['variables']:
             try:
-                result = await client.create_variable(
+                result = await asyncio.to_thread(
+                    client.create_variable,
                     account_id, container_id,
                     variable['name'], variable['type'],
                     variable.get('parameters', {})
@@ -178,7 +186,8 @@ async def create_ga4_setup(account_id: str, container_id: str, measurement_id: s
         # Create triggers
         for trigger in components['triggers']:
             try:
-                result = await client.create_trigger(
+                result = await asyncio.to_thread(
+                    client.create_trigger,
                     account_id, container_id,
                     trigger['name'], trigger['type'],
                     trigger.get('filters', [])
@@ -200,7 +209,8 @@ async def create_ga4_setup(account_id: str, container_id: str, measurement_id: s
         # Create tags
         for tag in components['tags']:
             try:
-                result = await client.create_tag(
+                result = await asyncio.to_thread(
+                    client.create_tag,
                     account_id, container_id,
                     tag['name'], tag['type'],
                     tag.get('parameters', {})
@@ -260,7 +270,8 @@ async def create_facebook_pixel_setup(account_id: str, container_id: str, pixel_
         # Create triggers and tags
         for trigger in components['triggers']:
             try:
-                result = await client.create_trigger(
+                result = await asyncio.to_thread(
+                    client.create_trigger,
                     account_id, container_id,
                     trigger['name'], trigger['type'],
                     trigger.get('filters', [])
@@ -281,7 +292,8 @@ async def create_facebook_pixel_setup(account_id: str, container_id: str, pixel_
 
         for tag in components['tags']:
             try:
-                result = await client.create_tag(
+                result = await asyncio.to_thread(
+                    client.create_tag,
                     account_id, container_id,
                     tag['name'], tag['type'],
                     tag.get('parameters', {})
@@ -372,19 +384,22 @@ async def create_complete_ecommerce_setup(account_id: str, container_id: str, ga
             for component in component_list:
                 try:
                     if component_type == "variable":
-                        result = await client.create_variable(
+                        result = await asyncio.to_thread(
+                            client.create_variable,
                             account_id, container_id,
                             component['name'], component['type'],
                             component.get('parameters', {})
                         )
                     elif component_type == "trigger":
-                        result = await client.create_trigger(
+                        result = await asyncio.to_thread(
+                            client.create_trigger,
                             account_id, container_id,
                             component['name'], component['type'],
                             component.get('filters', [])
                         )
                     elif component_type == "tag":
-                        result = await client.create_tag(
+                        result = await asyncio.to_thread(
+                            client.create_tag,
                             account_id, container_id,
                             component['name'], component['type'],
                             component.get('parameters', {})
@@ -430,7 +445,7 @@ async def publish_gtm_container(account_id: str, container_id: str, version_name
     try:
         client = get_gtm_client()
 
-        result = await client.publish_version(account_id, container_id, version_name, version_notes, workspace_id)
+        result = await asyncio.to_thread(client.publish_version, account_id, container_id, version_name, version_notes, workspace_id)
 
         publish_result = {
             "status": "success",
@@ -514,10 +529,10 @@ async def create_datalayer_variable(account_id: str, container_id: str, variable
 
         parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
 
-        result = client.service.accounts().containers().workspaces().variables().create(
+        result = await _run(client.service.accounts().containers().workspaces().variables().create(
             parent=parent,
             body=variable_body
-        ).execute()
+        ))
 
         return {
             "status": "success",
@@ -570,10 +585,10 @@ async def create_datalayer_variables_batch(account_id: str, container_id: str, v
                     ]
                 }
 
-                result = client.service.accounts().containers().workspaces().variables().create(
+                result = await _run(client.service.accounts().containers().workspaces().variables().create(
                     parent=parent,
                     body=variable_body
-                ).execute()
+                ))
 
                 results["created"].append({
                     "name": var['name'],
@@ -614,9 +629,9 @@ async def list_gtm_variables(account_id: str, container_id: str, workspace_id: s
         client = get_gtm_client()
         parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
 
-        result = client.service.accounts().containers().workspaces().variables().list(
+        result = await _run(client.service.accounts().containers().workspaces().variables().list(
             parent=parent
-        ).execute()
+        ))
 
         variables = result.get('variable', [])
 
@@ -654,9 +669,9 @@ async def list_gtm_workspaces(account_id: str, container_id: str) -> dict:
         client = get_gtm_client()
         parent = f"accounts/{account_id}/containers/{container_id}"
 
-        result = client.service.accounts().containers().workspaces().list(
+        result = await _run(client.service.accounts().containers().workspaces().list(
             parent=parent
-        ).execute()
+        ))
 
         workspaces = result.get('workspace', [])
 
@@ -689,7 +704,7 @@ async def list_gtm_accounts() -> dict:
     try:
         client = get_gtm_client()
 
-        result = client.service.accounts().list().execute()
+        result = await _run(client.service.accounts().list())
 
         accounts = result.get('account', [])
 
@@ -730,9 +745,9 @@ async def list_gtm_tags(account_id: str, container_id: str, workspace_id: str = 
         client = get_gtm_client()
         parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
 
-        result = client.service.accounts().containers().workspaces().tags().list(
+        result = await _run(client.service.accounts().containers().workspaces().tags().list(
             parent=parent
-        ).execute()
+        ))
 
         tags = result.get('tag', [])
 
@@ -791,9 +806,9 @@ async def get_gtm_tag(account_id: str, container_id: str, tag_id: str, workspace
         client = get_gtm_client()
         path = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}/tags/{tag_id}"
 
-        tag = client.service.accounts().containers().workspaces().tags().get(
+        tag = await _run(client.service.accounts().containers().workspaces().tags().get(
             path=path
-        ).execute()
+        ))
 
         return {
             "status": "success",
@@ -849,9 +864,9 @@ async def update_tag_consent_settings(
         path = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}/tags/{tag_id}"
 
         # Get the existing tag
-        tag = client.service.accounts().containers().workspaces().tags().get(
+        tag = await _run(client.service.accounts().containers().workspaces().tags().get(
             path=path
-        ).execute()
+        ))
 
         # Build consent settings
         consent_settings = {
@@ -870,11 +885,11 @@ async def update_tag_consent_settings(
         tag['consentSettings'] = consent_settings
 
         # Update the tag
-        updated = client.service.accounts().containers().workspaces().tags().update(
+        updated = await _run(client.service.accounts().containers().workspaces().tags().update(
             path=path,
             body=tag,
             fingerprint=tag.get('fingerprint')
-        ).execute()
+        ))
 
         return {
             "status": "success",
@@ -956,18 +971,18 @@ async def update_tags_consent_settings_batch(
                 path = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}/tags/{tag_id}"
 
                 # Get the existing tag
-                tag = client.service.accounts().containers().workspaces().tags().get(
+                tag = await _run(client.service.accounts().containers().workspaces().tags().get(
                     path=path
-                ).execute()
+                ))
 
                 tag['consentSettings'] = consent_settings
 
                 # Update
-                updated = client.service.accounts().containers().workspaces().tags().update(
+                updated = await _run(client.service.accounts().containers().workspaces().tags().update(
                     path=path,
                     body=tag,
                     fingerprint=tag.get('fingerprint')
-                ).execute()
+                ))
 
                 results["updated"].append({
                     "tag_id": tag_id,
@@ -1007,9 +1022,9 @@ async def list_gtm_triggers(account_id: str, container_id: str, workspace_id: st
         client = get_gtm_client()
         parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
 
-        result = client.service.accounts().containers().workspaces().triggers().list(
+        result = await _run(client.service.accounts().containers().workspaces().triggers().list(
             parent=parent
-        ).execute()
+        ))
 
         triggers = result.get('trigger', [])
 
@@ -1052,9 +1067,9 @@ async def delete_gtm_variable(account_id: str, container_id: str, variable_id: s
         client = get_gtm_client()
         path = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}/variables/{variable_id}"
 
-        client.service.accounts().containers().workspaces().variables().delete(
+        await _run(client.service.accounts().containers().workspaces().variables().delete(
             path=path
-        ).execute()
+        ))
 
         return {
             "status": "success",
@@ -1105,10 +1120,10 @@ async def create_trigger(
             ]
         }
 
-        result = client.service.accounts().containers().workspaces().triggers().create(
+        result = await _run(client.service.accounts().containers().workspaces().triggers().create(
             parent=parent,
             body=trigger_body
-        ).execute()
+        ))
 
         return {
             "status": "success",
@@ -1162,9 +1177,9 @@ async def add_firing_trigger_to_tags_batch(
                 path = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}/tags/{tag_id}"
 
                 # Get the existing tag
-                tag = client.service.accounts().containers().workspaces().tags().get(
+                tag = await _run(client.service.accounts().containers().workspaces().tags().get(
                     path=path
-                ).execute()
+                ))
 
                 # Check if trigger is already attached
                 existing_triggers = tag.get('firingTriggerId', [])
@@ -1180,11 +1195,11 @@ async def add_firing_trigger_to_tags_batch(
                 tag['firingTriggerId'] = existing_triggers + [trigger_id]
 
                 # Update the tag
-                updated = client.service.accounts().containers().workspaces().tags().update(
+                updated = await _run(client.service.accounts().containers().workspaces().tags().update(
                     path=path,
                     body=tag,
                     fingerprint=tag.get('fingerprint')
-                ).execute()
+                ))
 
                 results["updated"].append({
                     "tag_id": tag_id,

@@ -29,51 +29,75 @@ def _workspace_parent(args):
     return f"accounts/{args.account_id}/containers/{args.container_id}/workspaces/{args.workspace_id}"
 
 
+def _paginate(request_fn, result_key):
+    """Fetch all pages from a paginated GTM API list endpoint."""
+    items = []
+    page_token = None
+    while True:
+        request = request_fn(pageToken=page_token) if page_token else request_fn()
+        result = request.execute()
+        items.extend(result.get(result_key, []))
+        page_token = result.get('nextPageToken')
+        if not page_token:
+            break
+    return items
+
+
 # ---------------------------------------------------------------------------
 # Command handlers
 # ---------------------------------------------------------------------------
 
 def list_accounts(client, _args):
-    result = client.service.accounts().list().execute()
-    print(json.dumps(result.get('account', []), indent=2))
+    items = _paginate(
+        lambda **kw: client.service.accounts().list(**kw),
+        'account',
+    )
+    print(json.dumps(items, indent=2))
 
 
 def list_containers(client, args):
     parent = f"accounts/{args.account_id}"
-    result = client.service.accounts().containers().list(parent=parent).execute()
-    print(json.dumps(result.get('container', []), indent=2))
+    items = _paginate(
+        lambda **kw: client.service.accounts().containers().list(parent=parent, **kw),
+        'container',
+    )
+    print(json.dumps(items, indent=2))
 
 
 def list_tags(client, args):
     parent = _workspace_parent(args)
-    result = client.service.accounts().containers().workspaces().tags().list(
-        parent=parent
-    ).execute()
-    print(json.dumps(result.get('tag', []), indent=2))
+    items = _paginate(
+        lambda **kw: client.service.accounts().containers().workspaces().tags().list(parent=parent, **kw),
+        'tag',
+    )
+    print(json.dumps(items, indent=2))
 
 
 def list_triggers(client, args):
     parent = _workspace_parent(args)
-    result = client.service.accounts().containers().workspaces().triggers().list(
-        parent=parent
-    ).execute()
-    print(json.dumps(result.get('trigger', []), indent=2))
+    items = _paginate(
+        lambda **kw: client.service.accounts().containers().workspaces().triggers().list(parent=parent, **kw),
+        'trigger',
+    )
+    print(json.dumps(items, indent=2))
 
 
 def list_variables(client, args):
     parent = _workspace_parent(args)
-    result = client.service.accounts().containers().workspaces().variables().list(
-        parent=parent
-    ).execute()
-    print(json.dumps(result.get('variable', []), indent=2))
+    items = _paginate(
+        lambda **kw: client.service.accounts().containers().workspaces().variables().list(parent=parent, **kw),
+        'variable',
+    )
+    print(json.dumps(items, indent=2))
 
 
 def list_workspaces(client, args):
     parent = f"accounts/{args.account_id}/containers/{args.container_id}"
-    result = client.service.accounts().containers().workspaces().list(
-        parent=parent
-    ).execute()
-    print(json.dumps(result.get('workspace', []), indent=2))
+    items = _paginate(
+        lambda **kw: client.service.accounts().containers().workspaces().list(parent=parent, **kw),
+        'workspace',
+    )
+    print(json.dumps(items, indent=2))
 
 
 def get_tag(client, args):

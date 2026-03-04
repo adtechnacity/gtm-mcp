@@ -13,9 +13,12 @@ venv/
 env/
 
 # Credentials & service account keys
+.env
+.env.*
 credentials.json
 token.json
-token.*
+token.yaml
+token.yml
 *service*account*.json
 *-sa-*.json
 *-key.json

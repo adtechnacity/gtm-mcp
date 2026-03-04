@@ -38,6 +38,8 @@ exclude = [
     ".git",
     ".venv",
     ".pytest_cache",
+    "test_*.py",
+    "tests/",
 ]
 
 [project.urls]
