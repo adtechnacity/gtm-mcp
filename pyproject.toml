@@ -4,10 +4,10 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-gtm-server"
-version = "1.0.0"
+version = "0.1.0"
 description = "MCP server for Google Tag Manager integration with Claude"
 authors = [
-    {name = "MCP GTM Server", email = "noreply@example.com"},
+    {name = "adtechnacity"},
 ]
 readme = "README.md"
 requires-python = ">=3.10"
@@ -21,34 +21,34 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mcp>=1.0.0",
-    "google-api-python-client>=2.0.0",
-    "google-auth-httplib2>=0.1.0",
-    "google-auth-oauthlib>=0.5.0",
-    "google-auth>=2.0.0",
+    "mcp>=1.23.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-auth>=2.23.0",
 ]
 
 [project.scripts]
-mcp-gtm-server = "server:main"
+mcp-gtm-server = "fastmcp_gtm_server:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["."]
 exclude = [
-    "test_*.py",
     "__pycache__",
     "*.pyc",
     ".git",
     ".venv",
-    ".pytest_cache"
+    ".pytest_cache",
+    "test_*.py",
+    "tests/",
 ]
 
 [project.urls]
-Homepage = "https://github.com/example/mcp-gtm-server"
-Repository = "https://github.com/example/mcp-gtm-server"
-Issues = "https://github.com/example/mcp-gtm-server/issues"
+Homepage = "https://github.com/adtechnacity/gtm-mcp"
+Repository = "https://github.com/adtechnacity/gtm-mcp"
+Issues = "https://github.com/adtechnacity/gtm-mcp/issues"
 
-[tool.uv]
-dev-dependencies = [
+[dependency-groups]
+dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
     "black>=23.0.0",

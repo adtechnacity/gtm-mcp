@@ -18,5 +18,5 @@ if [ ! -d ".venv" ]; then
 fi
 
 # Run the server
-echo "Starting MCP GTM Server..."
-uv run python server.py
+echo "Starting FastMCP GTM Server..."
+uv run python fastmcp_gtm_server.py

@@ -1,199 +1,214 @@
 # Google Tag Manager MCP Server
 
-A Model Context Protocol (MCP) server that integrates Google Tag Manager with Claude, enabling automated GTM configuration and component creation through natural language prompts.
+An MCP server that exposes Google Tag Manager API v2 as tools for AI agents like Claude. Manage tags, triggers, variables, consent settings, and publishing through natural language.
 
 ## Features
 
-- **GTM API Integration**: Full Google Tag Manager API integration for creating and managing tags, triggers, and variables
-- **Component Templates**: Pre-built templates for common tracking scenarios (GA4, Facebook Pixel, conversion tracking)
-- **Workflow Automation**: Complete workflow creation for different site types (ecommerce, lead generation, content sites)
-- **Claude Integration**: Natural language interface for GTM configuration through Claude
+- **18 MCP tools** covering discovery, CRUD, consent management, batch operations, and publishing
+- **Service account authentication** — headless, no browser flow, works in containers
+- **Template builder** for generating GTM component JSON locally
+- **Batch operations** for bulk consent updates and variable creation
+- **CLI tool** for direct GTM API queries from the command line
 
 ## Setup
 
 ### 1. Install Dependencies
 
-#### Option A: Using uv (Recommended)
-
 ```bash
-# Install uv if not already installed
-curl -LsSf https://astral.sh/uv/install.sh | sh
-source $HOME/.local/bin/env
-
-# Install dependencies
+# Using uv (recommended)
 uv sync
-```
 
-#### Option B: Using pip
-
-```bash
+# Or using pip
 pip install -r requirements.txt
 ```
 
-### 2. Google Cloud Console Setup
+### 2. Create a Service Account
+
+#### Option A: Using gcloud CLI
+
+```bash
+# Create the service account
+gcloud iam service-accounts create gtm-mcp \
+  --project=YOUR_PROJECT_ID \
+  --display-name="GTM MCP Server" \
+  --description="Service account for GTM MCP server"
+
+# Download the key
+gcloud iam service-accounts keys create /path/to/sa-key.json \
+  --iam-account=gtm-mcp@YOUR_PROJECT_ID.iam.gserviceaccount.com
+```
+
+Then enable the Tag Manager API:
+
+```bash
+gcloud services enable tagmanager.googleapis.com --project=YOUR_PROJECT_ID
+```
+
+#### Option B: Using Google Cloud Console
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select existing one
-3. Enable the Tag Manager API:
-   - Go to "APIs & Services" > "Library"
-   - Search for "Tag Manager API"
-   - Click "Enable"
+2. Create a new project or select an existing one
+3. Enable the **Tag Manager API** under "APIs & Services" > "Library"
+4. Go to "APIs & Services" > "Credentials"
+5. Click "Create Credentials" > "Service Account"
+6. Grant appropriate roles and click "Done"
+7. Click on the service account, go to "Keys" > "Add Key" > "Create new key" > JSON
+8. Save the JSON key file
 
-### 3. Create Service Account Credentials
+#### Grant GTM Access
 
-1. Go to "APIs & Services" > "Credentials"
-2. Click "Create Credentials" > "OAuth 2.0 Client IDs"
-3. Choose "Desktop application"
-4. Download the JSON file and save it as `credentials.json` in this directory
+Add the service account email (e.g. `gtm-mcp@YOUR_PROJECT_ID.iam.gserviceaccount.com`) as a user in GTM:
+- Go to GTM > Admin > Account > User Management
+- Add the service account email with **Edit** and **Publish** permissions
 
-### 4. Configure Claude
+Set the env var:
 
-Add the MCP server configuration to your Claude config:
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa-key.json
+```
+
+### 3. Configure Your MCP Client
+
+Add the server to your MCP client config (Claude Desktop, Claude Code, etc.):
 
 ```json
 {
   "mcpServers": {
     "gtm": {
-      "command": "python",
-      "args": ["/path/to/mcp-for-gtm/server.py"],
+      "command": "uv",
+      "args": ["run", "python", "/path/to/gtm-mcp/fastmcp_gtm_server.py"],
       "env": {
-        "GTM_CREDENTIALS_FILE": "/path/to/mcp-for-gtm/credentials.json",
-        "GTM_TOKEN_FILE": "/path/to/mcp-for-gtm/token.json"
+        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account-key.json"
       }
     }
   }
 }
 ```
 
-## Available Tools
+Or using the installed entry point:
 
-### Basic GTM Operations
+```json
+{
+  "mcpServers": {
+    "gtm": {
+      "command": "mcp-gtm-server",
+      "env": {
+        "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account-key.json"
+      }
+    }
+  }
+}
+```
 
-- **`create_gtm_tag`**: Create individual GTM tags
-- **`create_gtm_trigger`**: Create GTM triggers  
-- **`create_gtm_variable`**: Create GTM variables
-- **`list_gtm_containers`**: List all containers for an account
-- **`get_gtm_container`**: Get container details
-- **`publish_gtm_version`**: Publish a container version
+## Available Tools (18)
 
-### Workflow Tools
+### Discovery
+- `test_gtm_connection` — Verify service account credentials
+- `list_gtm_accounts` — List all accessible GTM accounts
+- `list_gtm_containers` — List containers in an account
+- `list_gtm_workspaces` — List workspaces in a container
 
-- **`create_ga4_setup`**: Complete Google Analytics 4 setup with config tag and common events
-- **`create_facebook_pixel_setup`**: Facebook Pixel tracking setup
-- **`create_form_tracking`**: Form submission tracking setup
-- **`generate_gtm_workflow`**: Generate complete workflows for different site types
+### Reading
+- `list_gtm_tags` — List all tags with consent settings
+- `list_gtm_triggers` — List all triggers with filters
+- `list_gtm_variables` — List all variables
+- `get_gtm_tag` — Get full tag details by ID
+
+### Creating
+- `create_tag` — Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.)
+- `create_trigger` — Create a custom event trigger
+- `create_datalayer_variable` — Create a single Data Layer Variable
+- `create_datalayer_variables_batch` — Create multiple Data Layer Variables
+
+### Modifying
+- `update_tag_consent_settings` — Set consent config for one tag
+- `update_tags_consent_settings_batch` — Set consent config for multiple tags
+- `add_firing_trigger_to_tags_batch` — Add a trigger to multiple tags
+
+### Deleting
+- `delete_gtm_variable` — Delete a variable from workspace
+
+### Publishing
+- `publish_gtm_container` — Create version from workspace and publish
+
+### Templates (Local Only)
+- `generate_ga4_template` — Generate GA4 tag JSON without API calls
+
+## CLI Tool
+
+Query GTM directly from the command line (uses the same service account credentials):
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
+
+uv run python cli.py list-accounts
+uv run python cli.py list-containers --account_id 123456
+uv run python cli.py list-tags --account_id 123456 --container_id 7890123
+uv run python cli.py list-triggers --account_id 123456 --container_id 7890123
+uv run python cli.py list-variables --account_id 123456 --container_id 7890123
+uv run python cli.py list-workspaces --account_id 123456 --container_id 7890123
+uv run python cli.py get-tag --account_id 123456 --container_id 7890123 --tag_id 42
+```
 
 ## Usage Examples
 
-### 1. Set up Google Analytics 4 tracking
-
 ```
-Create a complete GA4 setup for my website with measurement ID G-XXXXXXXXXX in GTM account 123456 and container 7890123
-```
+# Discover your GTM setup
+List my GTM accounts, then show containers for account 123456
 
-### 2. Generate ecommerce tracking workflow
+# Create a GA4 config tag
+Create a gtagjs tag with measurement ID G-XXXXXXXXXX in account 123456, container 7890123
 
-```
-Generate a complete ecommerce tracking workflow with GA4 measurement ID G-XXXXXXXXXX and Facebook Pixel ID 123456789
-```
+# Audit consent settings
+List all tags in my container and show which ones are missing consent configuration
 
-### 3. Create form tracking
+# Bulk update consent
+Set ad_storage and analytics_storage consent requirements on tags 1, 2, 3, 4, 5
 
-```
-Set up form tracking for the contact form with selector #contact-form in my GTM container
-```
-
-### 4. Create custom components
-
-```
-Create a custom GTM tag for tracking video plays with the following parameters: event_name = "video_play", video_title = "{{Video Title}}", video_duration = "{{Video Duration}}"
+# Create a Custom HTML tag
+Create a custom HTML tag that loads my tracking script, firing on all pages
 ```
 
-## Workflow Types
-
-The `generate_gtm_workflow` tool supports three main workflow types:
-
-- **`ecommerce`**: Enhanced ecommerce tracking with purchase, cart, and product interaction events
-- **`lead_generation`**: Form submissions, CTA clicks, and conversion tracking
-- **`content_site`**: Content engagement, newsletter signups, and social sharing
-
-## Authentication
-
-On first run, the server will open a browser window for OAuth authentication. Grant the necessary permissions to access your GTM account. The authentication token will be saved for future use.
-
-## File Structure
-
-```
-mcp-for-gtm/
-├── server.py              # Main MCP server
-├── gtm_client.py          # GTM API client
-├── gtm_components.py      # Component templates and workflow builder
-├── requirements.txt       # Python dependencies
-├── config.json           # MCP server configuration
-├── credentials.json      # Google OAuth credentials (you provide)
-├── token.json           # Generated auth token (auto-created)
-└── README.md           # This file
-```
-
-## Troubleshooting
-
-### Authentication Issues
-- Ensure `credentials.json` is properly configured from Google Cloud Console
-- Check that Tag Manager API is enabled in your Google Cloud project
-- Verify you have the necessary permissions in your GTM account
-
-### Permission Errors
-- Make sure your Google account has edit permissions for the GTM container
-- Ensure the GTM account and container IDs are correct
-
-### API Errors
-- Check your GTM account and container IDs
-- Verify that the workspace exists (default workspace ID is used)
-- Check rate limits if you're making many requests
-
-## Development
-
-### Running Tests
-
-```bash
-# Using uv
-uv run python test_server.py
-
-# Or directly with python
-python test_server.py
-```
-
-### Running the Server
+## Running the Server
 
 ```bash
 # Using the convenience script
 ./run_server.sh
 
 # Or manually with uv
-uv run python server.py
-
-# Or with system python
-python server.py
+uv run python fastmcp_gtm_server.py
 ```
 
-### Development Dependencies
+## File Structure
 
-The project includes development dependencies for code quality:
-
-```bash
-# Format code with black
-uv run black .
-
-# Check with flake8
-uv run flake8 .
-
-# Type checking with mypy
-uv run mypy .
-
-# Run tests with pytest
-uv run pytest
+```
+gtm-mcp/
+├── fastmcp_gtm_server.py      # MCP server entry point — 10 read/query tools + main()
+├── fastmcp_gtm_write_tools.py # 8 write tools (imported by server)
+├── fastmcp_gtm_helpers.py     # Shared mcp instance, GTM client, internal helpers
+├── gtm_client_fixed.py        # GTM API client with service account auth
+├── gtm_components.py          # Template builder (no API calls)
+├── cli.py                     # CLI tool (7 read-only subcommands)
+├── pyproject.toml             # Project config & dependencies
+├── requirements.txt           # pip dependencies
+├── run_server.sh              # Launch script
+├── AGENTS.md                  # AI agent reference & full API coverage
+├── LICENSE                    # MIT
+└── README.md                  # This file
 ```
 
-## Contributing
+## Authentication
 
-Feel free to submit issues and enhancement requests!
+Uses Google Service Account credentials. Set `GOOGLE_APPLICATION_CREDENTIALS` to the path of your service account JSON key file. The service account must be added as a user in GTM with appropriate permissions (Edit + Publish). No browser flow, no token files — works headless in containers.
+
+## AI Agent Reference
+
+See [AGENTS.md](AGENTS.md) for:
+- Full GTM API v2 endpoint reference (105 methods across 18 resource families)
+- Implementation status of each endpoint
+- Common workflow patterns
+- Priority list for future implementation
+
+## License
+
+MIT — see [LICENSE](LICENSE)

@@ -1,3 +1,16 @@
+"""
+GTM component templates and workflow builder.
+
+Local template builders for constructing GTM tag, trigger, and variable JSON
+structures. These classes do NOT make any API calls — they produce dictionaries
+that can be passed to GTMClient methods or exported as JSON.
+
+Classes:
+    GTMComponentTemplates: Static methods returning individual component dicts
+        (GA4 tags, FB Pixel tags, triggers, variables, etc.)
+    GTMWorkflowBuilder: Fluent builder that composes multiple templates into
+        a complete setup (e.g. full GA4 + ecommerce + FB Pixel stack).
+"""
 from typing import Dict, Any, List
 import json
 
@@ -125,7 +138,7 @@ class GTMComponentTemplates:
                 {
                     'type': 'equals',
                     'parameter': [
-                        {'key': 'arg0', 'value': '{{Event}}', 'type': 'template'},
+                        {'key': 'arg0', 'value': '{{_event}}', 'type': 'template'},
                         {'key': 'arg1', 'value': event_name, 'type': 'template'}
                     ]
                 }
