@@ -25,7 +25,17 @@ from gtm_client_fixed import GTMClient
 # Path helpers
 # ---------------------------------------------------------------------------
 
+def _validate_cli_id(value, name):
+    """Validate a GTM ID is a non-empty numeric string."""
+    if not value or not str(value).strip().isdigit():
+        print(json.dumps({"error": f"Invalid {name}: '{value}'. Must be a numeric string."}), file=sys.stderr)
+        sys.exit(1)
+
+
 def _workspace_parent(args):
+    _validate_cli_id(args.account_id, "account_id")
+    _validate_cli_id(args.container_id, "container_id")
+    _validate_cli_id(args.workspace_id, "workspace_id")
     return f"accounts/{args.account_id}/containers/{args.container_id}/workspaces/{args.workspace_id}"
 
 
@@ -56,6 +66,7 @@ def list_accounts(client, _args):
 
 
 def list_containers(client, args):
+    _validate_cli_id(args.account_id, "account_id")
     parent = f"accounts/{args.account_id}"
     items = _paginate(
         lambda **kw: client.service.accounts().containers().list(parent=parent, **kw),
@@ -92,6 +103,8 @@ def list_variables(client, args):
 
 
 def list_workspaces(client, args):
+    _validate_cli_id(args.account_id, "account_id")
+    _validate_cli_id(args.container_id, "container_id")
     parent = f"accounts/{args.account_id}/containers/{args.container_id}"
     items = _paginate(
         lambda **kw: client.service.accounts().containers().workspaces().list(parent=parent, **kw),
@@ -101,6 +114,7 @@ def list_workspaces(client, args):
 
 
 def get_tag(client, args):
+    _validate_cli_id(args.tag_id, "tag_id")
     path = f"{_workspace_parent(args)}/tags/{args.tag_id}"
     tag = client.service.accounts().containers().workspaces().tags().get(
         path=path

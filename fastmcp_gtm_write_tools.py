@@ -13,7 +13,7 @@ from fastmcp_gtm_helpers import (
     MAX_BATCH_SIZE,
     _create_datalayer_var,
     _validate_consent_params, _build_consent_settings,
-    _validate_ids,
+    _validate_ids, _resolve_workspace_parent,
     _batch_update_tags,
 )
 
@@ -62,10 +62,10 @@ async def create_tag(
         notes: Optional user notes describing the tag's purpose
         paused: Whether the tag should be created in a paused state (default False)
         tag_firing_option: Firing option — "unlimited", "oncePerEvent", or "oncePerLoad"
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id)
         if error:
             return {"status": "error", "message": error}
 
@@ -75,7 +75,7 @@ async def create_tag(
                 return {"status": "error", "message": error}
 
         client = get_gtm_client()
-        parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
+        workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
         tag_body = {"name": name, "type": tag_type}
 
@@ -133,14 +133,15 @@ async def publish_gtm_container(account_id: str, container_id: str, version_name
         container_id: GTM Container ID
         version_name: Name for the new version
         version_notes: Optional notes describing the version changes
-        workspace_id: GTM Workspace ID to publish from (default "1"). Use list_gtm_workspaces to find the correct workspace.
+        workspace_id: GTM Workspace ID to publish from (auto-detected if omitted). Use list_gtm_workspaces to find the correct workspace.
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id)
         if error:
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
+        workspace_id, _ = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
         result = await asyncio.to_thread(client.publish_version, account_id, container_id, version_name, version_notes, workspace_id)
 
@@ -177,14 +178,15 @@ async def create_datalayer_variable(account_id: str, container_id: str, variable
         container_id: GTM Container ID
         variable_name: Display name for the variable in GTM (e.g., "DLV - fs_order_id")
         datalayer_key: The dataLayer key to read (e.g., "fs_order_id")
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id)
         if error:
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
+        workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
         variable_body = {
             'name': variable_name,
@@ -195,8 +197,6 @@ async def create_datalayer_variable(account_id: str, container_id: str, variable
                 {'key': 'name', 'value': datalayer_key, 'type': 'template'}
             ]
         }
-
-        parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
 
         result = await _run(client.service.accounts().containers().workspaces().variables().create(
             parent=parent,
@@ -230,17 +230,20 @@ async def create_datalayer_variables_batch(account_id: str, container_id: str, v
         container_id: GTM Container ID
         variables: List of dicts with 'name' (display name) and 'key' (dataLayer key).
                    Example: [{"name": "DLV - fs_order_id", "key": "fs_order_id"}, ...]
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id)
         if error:
             return {"status": "error", "message": error}
         if len(variables) > MAX_BATCH_SIZE:
             return {"status": "error", "message": f"Batch size {len(variables)} exceeds limit of {MAX_BATCH_SIZE}."}
+        for i, var in enumerate(variables):
+            if not isinstance(var, dict) or not var.get('name') or not var.get('key'):
+                return {"status": "error", "message": f"Variable at index {i} must have non-empty 'name' and 'key' strings."}
 
         client = get_gtm_client()
-        parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
+        workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
         results = {"created": [], "failed": []}
 
         for var in variables:
@@ -284,15 +287,15 @@ async def create_trigger(
         container_id: GTM Container ID
         trigger_name: Display name for the trigger in GTM (e.g., "CE - consent_update")
         event_name: The custom event name to match (e.g., "consent_update")
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id)
         if error:
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
-        parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
+        workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
         trigger_body = {
             'name': trigger_name,
@@ -356,10 +359,10 @@ async def update_tag_consent_settings(
                        Valid types: "ad_storage", "analytics_storage", "ad_user_data",
                        "ad_personalization", "functionality_storage", "personalization_storage",
                        "security_storage"
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
         if error:
             return {"status": "error", "message": error}
         error = _validate_consent_params(consent_status, consent_types)
@@ -367,7 +370,8 @@ async def update_tag_consent_settings(
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
-        path = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}/tags/{tag_id}"
+        workspace_id, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        path = f"{ws_parent}/tags/{tag_id}"
 
         tag = await _run(client.service.accounts().containers().workspaces().tags().get(path=path))
         tag['consentSettings'] = _build_consent_settings(consent_status, consent_types)
@@ -415,10 +419,10 @@ async def update_tags_consent_settings_batch(
                        Valid types: "ad_storage", "analytics_storage", "ad_user_data",
                        "ad_personalization", "functionality_storage", "personalization_storage",
                        "security_storage"
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id)
         if error:
             return {"status": "error", "message": error}
         error = _validate_consent_params(consent_status, consent_types)
@@ -426,13 +430,12 @@ async def update_tags_consent_settings_batch(
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
+        workspace_id, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
         consent_settings = _build_consent_settings(consent_status, consent_types)
 
         def apply_consent(tag):
             tag['consentSettings'] = consent_settings
             return tag
-
-        prefix = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
         return await _batch_update_tags(client, prefix, tag_ids, apply_consent)
     except Exception as e:
         return {
@@ -465,14 +468,15 @@ async def add_firing_trigger_to_tags_batch(
         container_id: GTM Container ID
         tag_ids: List of tag ID strings to update
         trigger_id: The trigger ID to add as a firing trigger
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, trigger_id=trigger_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id, trigger_id=trigger_id)
         if error:
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
+        workspace_id, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
         def append_trigger(tag):
             existing = tag.get('firingTriggerId', [])
@@ -480,8 +484,6 @@ async def add_firing_trigger_to_tags_batch(
                 return None
             tag['firingTriggerId'] = existing + [trigger_id]
             return tag
-
-        prefix = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
         return await _batch_update_tags(
             client, prefix, tag_ids, append_trigger,
             extra_fields_fn=lambda t: {"firing_triggers": t.get("firingTriggerId", [])},
