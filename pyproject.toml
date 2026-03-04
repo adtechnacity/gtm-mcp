@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mcp-gtm-server"
-version = "1.0.0"
+version = "0.1.0"
 description = "MCP server for Google Tag Manager integration with Claude"
 authors = [
     {name = "adtechnacity"},
@@ -21,10 +21,10 @@ classifiers = [
     "Programming Language :: Python :: 3.12",
 ]
 dependencies = [
-    "mcp>=1.0.0",
-    "google-api-python-client>=2.0.0",
-    "google-auth-httplib2>=0.1.0",
-    "google-auth>=2.0.0",
+    "mcp>=1.23.0",
+    "google-api-python-client>=2.100.0",
+    "google-auth-httplib2>=0.2.0",
+    "google-auth>=2.23.0",
 ]
 
 [project.scripts]

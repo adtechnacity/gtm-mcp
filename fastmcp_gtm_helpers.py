@@ -41,7 +41,10 @@ def get_gtm_client():
 
 async def _run(request):
     """Run a blocking Google API request in a thread pool."""
-    return await asyncio.to_thread(request.execute)
+    result = await asyncio.to_thread(request.execute)
+    if result is None:
+        return {}
+    return result
 
 
 # Load GTM components
@@ -58,37 +61,41 @@ except ImportError as e:
 # Internal helpers — shared logic extracted from tool functions
 # ---------------------------------------------------------------------------
 
-_COMPONENT_SPECS = {
-    "variable": ("create_variable", "parameters", {}),
-    "trigger":  ("create_trigger",  "filters",     []),
-    "tag":      ("create_tag",      "parameters", {}),
-}
+MAX_BATCH_SIZE = 50
 
 
-async def _create_components(client, account_id, container_id, components):
-    """Create GTM variables, triggers, and tags from a components dict.
+def _validate_gtm_id(value, name="ID"):
+    """Validate that a GTM ID is a non-empty numeric string. Returns error message or None."""
+    if not value or not str(value).strip().isdigit():
+        return f"Invalid {name}: '{value}'. Must be a non-empty numeric string."
+    return None
 
-    Processes in dependency order: variables → triggers → tags.
-    Uses asyncio.to_thread with GTMClient convenience methods.
-    Returns list of result dicts with type, name, status, and id or error.
+
+def _validate_ids(**ids):
+    """Validate multiple GTM ID parameters. Returns first error or None."""
+    for name, value in ids.items():
+        error = _validate_gtm_id(value, name)
+        if error:
+            return error
+    return None
+
+
+async def _paginated_list(request_fn, result_key):
+    """Fetch all pages from a GTM API list endpoint.
+
+    request_fn → callable returning a Google API request object.
+    result_key → key in response containing the list items (e.g. 'tag', 'variable').
     """
-    created = []
-    for comp_type in ("variable", "trigger", "tag"):
-        method_name, arg_key, arg_default = _COMPONENT_SPECS[comp_type]
-        method = getattr(client, method_name)
-        for comp in components.get(f"{comp_type}s", []):
-            try:
-                result = await asyncio.to_thread(
-                    method, account_id, container_id,
-                    comp["name"], comp["type"], comp.get(arg_key, arg_default),
-                )
-                created.append({"type": comp_type, "name": comp["name"],
-                                "status": "success", "id": result.get(f"{comp_type}Id")})
-            except Exception as e:
-                created.append({"type": comp_type, "name": comp["name"],
-                                "status": "error", "error": str(e)})
-    return created
-
+    items = []
+    request = request_fn()
+    while request is not None:
+        result = await _run(request)
+        items.extend(result.get(result_key, []))
+        next_token = result.get('nextPageToken')
+        if not next_token:
+            break
+        request = request_fn(pageToken=next_token)
+    return items
 
 _VALID_CONSENT_STATUSES = ("notSet", "notNeeded", "needed")
 
@@ -156,6 +163,8 @@ async def _batch_update_tags(client, path_prefix, tag_ids, mutate_fn,
     extra_fields_fn(updated_tag) → dict of extra fields for updated entries (optional).
     skip_reason → static reason string added to skipped entries (optional).
     """
+    if len(tag_ids) > MAX_BATCH_SIZE:
+        return {"status": "error", "message": f"Batch size {len(tag_ids)} exceeds limit of {MAX_BATCH_SIZE}."}
     results = {"updated": [], "skipped": [], "failed": []}
     for tag_id in tag_ids:
         try:

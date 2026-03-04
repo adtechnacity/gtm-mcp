@@ -24,7 +24,6 @@ from typing import Any, Dict, List
 
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
 
 # Redirect Google client logs to stderr
 google_logger = logging.getLogger('google.auth')
@@ -47,7 +46,7 @@ class GTMClient:
                 "No credentials file provided. Set GOOGLE_APPLICATION_CREDENTIALS env var "
                 "or pass credentials_file to GTMClient()"
             )
-        logger.info("GTM Client initializing with SA credentials: %s", self.credentials_file)
+        logger.info("GTM Client initializing with service account credentials")
         self.service = self._build_service()
 
     def _build_service(self):
@@ -79,8 +78,8 @@ class GTMClient:
     # Write operations
     # ------------------------------------------------------------------
 
-    def create_tag(self, account_id: str, container_id: str, name: str, tag_type: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        parent = self._workspace_parent(account_id, container_id)
+    def create_tag(self, account_id: str, container_id: str, name: str, tag_type: str, parameters: Dict[str, Any], workspace_id: str = "1") -> Dict[str, Any]:
+        parent = self._workspace_parent(account_id, container_id, workspace_id)
         tag_body = {
             'name': name,
             'type': tag_type,
@@ -94,12 +93,12 @@ class GTMClient:
         logger.info("Tag created successfully: %s", result.get('name', 'Unknown'))
         return result
 
-    def create_trigger(self, account_id: str, container_id: str, name: str, trigger_type: str, filters: List[Dict[str, Any]]) -> Dict[str, Any]:
-        parent = self._workspace_parent(account_id, container_id)
+    def create_trigger(self, account_id: str, container_id: str, name: str, trigger_type: str, filters: List[Dict[str, Any]], workspace_id: str = "1") -> Dict[str, Any]:
+        parent = self._workspace_parent(account_id, container_id, workspace_id)
         trigger_body = {
             'name': name,
             'type': trigger_type,
-            'filter': filters,
+            'customEventFilter': filters,
         }
 
         logger.info("Creating trigger: %s", name)
@@ -109,8 +108,8 @@ class GTMClient:
         logger.info("Trigger created successfully: %s", result.get('name', 'Unknown'))
         return result
 
-    def create_variable(self, account_id: str, container_id: str, name: str, variable_type: str, parameters: Dict[str, Any]) -> Dict[str, Any]:
-        parent = self._workspace_parent(account_id, container_id)
+    def create_variable(self, account_id: str, container_id: str, name: str, variable_type: str, parameters: Dict[str, Any], workspace_id: str = "1") -> Dict[str, Any]:
+        parent = self._workspace_parent(account_id, container_id, workspace_id)
         variable_body = {
             'name': name,
             'type': variable_type,

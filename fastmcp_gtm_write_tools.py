@@ -1,171 +1,117 @@
 """
-Write/setup MCP tools for Google Tag Manager.
+Write MCP tools for Google Tag Manager.
 
-Registers 10 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
-create_ga4_setup, create_facebook_pixel_setup, create_complete_ecommerce_setup,
-publish_gtm_container, create_datalayer_variable, create_datalayer_variables_batch,
-create_trigger, update_tag_consent_settings, update_tags_consent_settings_batch,
+Registers 8 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
+create_tag, create_trigger, create_datalayer_variable, create_datalayer_variables_batch,
+publish_gtm_container, update_tag_consent_settings, update_tags_consent_settings_batch,
 add_firing_trigger_to_tags_batch.
 """
 import asyncio
 
 from fastmcp_gtm_helpers import (
     mcp, get_gtm_client, _run,
-    HAS_GTM_COMPONENTS,
-    _create_components, _create_datalayer_var,
+    MAX_BATCH_SIZE,
+    _create_datalayer_var,
     _validate_consent_params, _build_consent_settings,
+    _validate_ids,
     _batch_update_tags,
 )
 
-try:
-    from gtm_components import GTMWorkflowBuilder
-except ImportError:
-    pass
-
 
 # ---------------------------------------------------------------------------
-# Setup tools
+# Tag creation
 # ---------------------------------------------------------------------------
 
 @mcp.tool()
-async def create_ga4_setup(account_id: str, container_id: str, measurement_id: str, enhanced_ecommerce: bool = False) -> dict:
-    """Create a complete GA4 setup in GTM with config tag, event tags, triggers, and variables.
+async def create_tag(
+    account_id: str,
+    container_id: str,
+    name: str,
+    tag_type: str,
+    parameter: list = None,
+    firing_trigger_ids: list = None,
+    blocking_trigger_ids: list = None,
+    consent_status: str = None,
+    consent_types: list = None,
+    notes: str = None,
+    paused: bool = False,
+    tag_firing_option: str = None,
+    workspace_id: str = "1",
+) -> dict:
+    """Create any tag in a GTM workspace.
 
-    Creates the following components in the live GTM workspace:
-    - GA4 config tag with the given measurement ID
-    - Page view trigger
-    - Purchase and add_to_cart event tags
-    - Common variables (URL, path, hostname, user ID, event category/action/label)
-    If enhanced_ecommerce is True, enables enhanced ecommerce on the config tag.
+    Calls tagmanager.accounts.containers.workspaces.tags.create to create a tag
+    of any type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.).
 
-    Args:
-        account_id: GTM Account ID
-        container_id: GTM Container ID
-        measurement_id: GA4 Measurement ID (e.g. "G-XXXXXXXXXX")
-        enhanced_ecommerce: Enable enhanced ecommerce tracking (default False)
-    """
-    try:
-        if not HAS_GTM_COMPONENTS:
-            return {"status": "error", "message": "GTM components not available"}
-
-        client = get_gtm_client()
-
-        # Build GA4 workflow
-        builder = GTMWorkflowBuilder()
-        builder.add_google_analytics_4_setup(measurement_id, enhanced_ecommerce)
-        builder.add_common_variables()
-
-        components = builder.get_components()
-        results = {
-            "status": "success",
-            "setup_type": "GA4",
-            "measurement_id": measurement_id,
-            "enhanced_ecommerce": enhanced_ecommerce,
-            "created_components": await _create_components(client, account_id, container_id, components),
-        }
-        return results
-
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to create GA4 setup: {str(e)}"
-        }
-
-@mcp.tool()
-async def create_facebook_pixel_setup(account_id: str, container_id: str, pixel_id: str) -> dict:
-    """Create a Facebook Pixel setup in the live GTM workspace.
-
-    Creates the Facebook Pixel base tag, a page view trigger, and any associated
-    event tags in the GTM container. Components are created via the GTM API.
+    The ``parameter`` list uses GTM's native format — each item is a dict with
+    ``key``, ``value``, and ``type`` (usually ``"template"``). Use ``get_gtm_tag``
+    on an existing tag to see the parameter format for a given tag type, or use
+    ``generate_ga4_template`` for GA4-specific templates.
 
     Args:
         account_id: GTM Account ID
         container_id: GTM Container ID
-        pixel_id: Facebook Pixel ID (numeric string)
+        name: Display name for the tag in GTM
+        tag_type: GTM tag type identifier (e.g. "gtagjs", "html", "ua", "fbpixel", "gclidw")
+        parameter: List of parameter dicts in GTM format: [{"key": "...", "value": "...", "type": "template"}, ...]
+        firing_trigger_ids: List of trigger ID strings that cause this tag to fire
+        blocking_trigger_ids: List of trigger ID strings that prevent this tag from firing
+        consent_status: Consent requirement — "notSet", "notNeeded", or "needed"
+        consent_types: List of consent types required when consent_status is "needed"
+                       (e.g. ["ad_storage", "analytics_storage"])
+        notes: Optional user notes describing the tag's purpose
+        paused: Whether the tag should be created in a paused state (default False)
+        tag_firing_option: Firing option — "unlimited", "oncePerEvent", or "oncePerLoad"
+        workspace_id: GTM Workspace ID (default "1")
     """
     try:
-        if not HAS_GTM_COMPONENTS:
-            return {"status": "error", "message": "GTM components not available"}
+        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        if consent_status is not None:
+            error = _validate_consent_params(consent_status, consent_types)
+            if error:
+                return {"status": "error", "message": error}
 
         client = get_gtm_client()
+        parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
 
-        # Build Facebook Pixel workflow
-        builder = GTMWorkflowBuilder()
-        builder.add_facebook_pixel_setup(pixel_id)
+        tag_body = {"name": name, "type": tag_type}
 
-        components = builder.get_components()
-        results = {
+        if parameter:
+            tag_body["parameter"] = parameter
+        if firing_trigger_ids:
+            tag_body["firingTriggerId"] = firing_trigger_ids
+        if blocking_trigger_ids:
+            tag_body["blockingTriggerId"] = blocking_trigger_ids
+        if consent_status is not None:
+            tag_body["consentSettings"] = _build_consent_settings(consent_status, consent_types)
+        if notes:
+            tag_body["notes"] = notes
+        if paused:
+            tag_body["paused"] = True
+        if tag_firing_option:
+            tag_body["tagFiringOption"] = tag_firing_option
+
+        result = await _run(
+            client.service.accounts().containers().workspaces().tags().create(
+                parent=parent, body=tag_body
+            )
+        )
+
+        return {
             "status": "success",
-            "setup_type": "Facebook Pixel",
-            "pixel_id": pixel_id,
-            "created_components": await _create_components(client, account_id, container_id, components),
+            "message": f"Tag '{name}' created successfully",
+            "tag_id": result.get("tagId"),
+            "tag_name": name,
+            "tag_type": tag_type,
+            "path": result.get("path"),
         }
-        return results
-
     except Exception as e:
         return {
             "status": "error",
-            "message": f"Failed to create Facebook Pixel setup: {str(e)}"
-        }
-
-@mcp.tool()
-async def create_complete_ecommerce_setup(account_id: str, container_id: str, ga4_measurement_id: str, facebook_pixel_id: str = None, include_conversion_tracking: bool = True) -> dict:
-    """Create a complete ecommerce tracking setup in the live GTM workspace.
-
-    Builds and deploys a full ecommerce tracking stack including:
-    - GA4 config tag with enhanced ecommerce enabled
-    - Facebook Pixel (optional, if pixel_id provided)
-    - Google Ads Conversion Linker (if include_conversion_tracking)
-    - Form tracking for #checkout-form
-    - Click tracking for .add-to-cart and .buy-now elements
-    - Common data layer variables
-
-    All components are created via the GTM API in the default workspace.
-
-    Args:
-        account_id: GTM Account ID
-        container_id: GTM Container ID
-        ga4_measurement_id: GA4 Measurement ID (e.g. "G-XXXXXXXXXX")
-        facebook_pixel_id: Optional Facebook Pixel ID to include FB tracking
-        include_conversion_tracking: Include Google Ads Conversion Linker (default True)
-    """
-    try:
-        if not HAS_GTM_COMPONENTS:
-            return {"status": "error", "message": "GTM components not available"}
-
-        client = get_gtm_client()
-
-        # Build complete ecommerce workflow
-        builder = GTMWorkflowBuilder()
-        builder.add_google_analytics_4_setup(ga4_measurement_id, enhanced_ecommerce=True)
-
-        if facebook_pixel_id:
-            builder.add_facebook_pixel_setup(facebook_pixel_id)
-
-        if include_conversion_tracking:
-            builder.add_conversion_tracking()
-
-        # Ecommerce specific tracking
-        builder.add_form_tracking('#checkout-form')
-        builder.add_click_tracking('.add-to-cart', 'add_to_cart')
-        builder.add_click_tracking('.buy-now', 'purchase_intent')
-        builder.add_common_variables()
-
-        components = builder.get_components()
-        results = {
-            "status": "success",
-            "setup_type": "Complete Ecommerce Workflow",
-            "ga4_measurement_id": ga4_measurement_id,
-            "facebook_pixel_id": facebook_pixel_id,
-            "includes_conversion_tracking": include_conversion_tracking,
-            "created_components": await _create_components(client, account_id, container_id, components),
-        }
-        return results
-
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to create ecommerce setup: {str(e)}"
+            "message": f"Failed to create tag: {str(e)}",
         }
 
 
@@ -190,18 +136,23 @@ async def publish_gtm_container(account_id: str, container_id: str, version_name
         workspace_id: GTM Workspace ID to publish from (default "1"). Use list_gtm_workspaces to find the correct workspace.
     """
     try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        if error:
+            return {"status": "error", "message": error}
+
         client = get_gtm_client()
 
         result = await asyncio.to_thread(client.publish_version, account_id, container_id, version_name, version_notes, workspace_id)
 
-        publish_result = {
+        version = result.get("containerVersion", {})
+        return {
             "status": "success",
             "message": f"Container {container_id} published successfully",
             "version_name": version_name,
             "version_notes": version_notes,
-            "published_version": result
+            "version_id": version.get("containerVersionId"),
+            "path": version.get("path"),
         }
-        return publish_result
 
     except Exception as e:
         return {
@@ -229,9 +180,12 @@ async def create_datalayer_variable(account_id: str, container_id: str, variable
         workspace_id: GTM Workspace ID (default "1")
     """
     try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        if error:
+            return {"status": "error", "message": error}
+
         client = get_gtm_client()
 
-        # Build the variable body for a Data Layer Variable (type 'v')
         variable_body = {
             'name': variable_name,
             'type': 'v',  # Data Layer Variable type
@@ -279,6 +233,12 @@ async def create_datalayer_variables_batch(account_id: str, container_id: str, v
         workspace_id: GTM Workspace ID (default "1")
     """
     try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        if error:
+            return {"status": "error", "message": error}
+        if len(variables) > MAX_BATCH_SIZE:
+            return {"status": "error", "message": f"Batch size {len(variables)} exceeds limit of {MAX_BATCH_SIZE}."}
+
         client = get_gtm_client()
         parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
         results = {"created": [], "failed": []}
@@ -327,6 +287,10 @@ async def create_trigger(
         workspace_id: GTM Workspace ID (default "1")
     """
     try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        if error:
+            return {"status": "error", "message": error}
+
         client = get_gtm_client()
         parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
 
@@ -395,6 +359,9 @@ async def update_tag_consent_settings(
         workspace_id: GTM Workspace ID (default "1")
     """
     try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id, workspace_id=workspace_id)
+        if error:
+            return {"status": "error", "message": error}
         error = _validate_consent_params(consent_status, consent_types)
         if error:
             return {"status": "error", "message": error}
@@ -451,6 +418,9 @@ async def update_tags_consent_settings_batch(
         workspace_id: GTM Workspace ID (default "1")
     """
     try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        if error:
+            return {"status": "error", "message": error}
         error = _validate_consent_params(consent_status, consent_types)
         if error:
             return {"status": "error", "message": error}
@@ -498,6 +468,10 @@ async def add_firing_trigger_to_tags_batch(
         workspace_id: GTM Workspace ID (default "1")
     """
     try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, trigger_id=trigger_id, workspace_id=workspace_id)
+        if error:
+            return {"status": "error", "message": error}
+
         client = get_gtm_client()
 
         def append_trigger(tag):

@@ -4,7 +4,7 @@ An MCP server that exposes Google Tag Manager API v2 as tools for AI agents like
 
 ## Features
 
-- **21 MCP tools** covering discovery, CRUD, consent management, batch operations, and publishing
+- **18 MCP tools** covering discovery, CRUD, consent management, batch operations, and publishing
 - **Service account authentication** — headless, no browser flow, works in containers
 - **Template builder** for generating GTM component JSON locally
 - **Batch operations** for bulk consent updates and variable creation
@@ -100,7 +100,7 @@ Or using the installed entry point:
 }
 ```
 
-## Available Tools (21)
+## Available Tools (18)
 
 ### Discovery
 - `test_gtm_connection` — Verify service account credentials
@@ -115,12 +115,10 @@ Or using the installed entry point:
 - `get_gtm_tag` — Get full tag details by ID
 
 ### Creating
-- `create_ga4_setup` — Full GA4 setup (config tag + events + triggers + variables)
-- `create_facebook_pixel_setup` — Facebook Pixel base tag + triggers
-- `create_complete_ecommerce_setup` — GA4 + FB Pixel + conversions + form/click tracking
+- `create_tag` — Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.)
+- `create_trigger` — Create a custom event trigger
 - `create_datalayer_variable` — Create a single Data Layer Variable
 - `create_datalayer_variables_batch` — Create multiple Data Layer Variables
-- `create_trigger` — Create a custom event trigger
 
 ### Modifying
 - `update_tag_consent_settings` — Set consent config for one tag
@@ -158,8 +156,8 @@ uv run python cli.py get-tag --account_id 123456 --container_id 7890123 --tag_id
 # Discover your GTM setup
 List my GTM accounts, then show containers for account 123456
 
-# Set up GA4 tracking
-Create a complete GA4 setup with measurement ID G-XXXXXXXXXX in account 123456, container 7890123
+# Create a GA4 config tag
+Create a gtagjs tag with measurement ID G-XXXXXXXXXX in account 123456, container 7890123
 
 # Audit consent settings
 List all tags in my container and show which ones are missing consent configuration
@@ -167,8 +165,8 @@ List all tags in my container and show which ones are missing consent configurat
 # Bulk update consent
 Set ad_storage and analytics_storage consent requirements on tags 1, 2, 3, 4, 5
 
-# Full ecommerce setup
-Create complete ecommerce tracking with GA4 G-XXXXXXXXXX and Facebook Pixel 123456789
+# Create a Custom HTML tag
+Create a custom HTML tag that loads my tracking script, firing on all pages
 ```
 
 ## Running the Server
@@ -185,16 +183,18 @@ uv run python fastmcp_gtm_server.py
 
 ```
 gtm-mcp/
-├── fastmcp_gtm_server.py  # MCP server (21 tools)
-├── gtm_client_fixed.py    # GTM API client with service account auth
-├── gtm_components.py      # Template builder (no API calls)
-├── cli.py                 # CLI tool (7 read-only subcommands)
-├── pyproject.toml          # Project config & dependencies
-├── requirements.txt        # pip dependencies
-├── run_server.sh           # Launch script
-├── AGENTS.md               # AI agent reference & full API coverage
-├── LICENSE                 # MIT
-└── README.md               # This file
+├── fastmcp_gtm_server.py      # MCP server entry point — 10 read/query tools + main()
+├── fastmcp_gtm_write_tools.py # 8 write tools (imported by server)
+├── fastmcp_gtm_helpers.py     # Shared mcp instance, GTM client, internal helpers
+├── gtm_client_fixed.py        # GTM API client with service account auth
+├── gtm_components.py          # Template builder (no API calls)
+├── cli.py                     # CLI tool (7 read-only subcommands)
+├── pyproject.toml             # Project config & dependencies
+├── requirements.txt           # pip dependencies
+├── run_server.sh              # Launch script
+├── AGENTS.md                  # AI agent reference & full API coverage
+├── LICENSE                    # MIT
+└── README.md                  # This file
 ```
 
 ## Authentication

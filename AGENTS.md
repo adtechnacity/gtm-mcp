@@ -2,11 +2,13 @@
 
 ## Architecture
 
-Four Python files:
+Five Python files:
 
 | File | Role |
 |------|------|
-| `fastmcp_gtm_server.py` | MCP server — 21 `@mcp.tool()` functions exposed to AI agents |
+| `fastmcp_gtm_server.py` | MCP server entry point — 10 read/query tools + `main()` |
+| `fastmcp_gtm_write_tools.py` | 8 write tools (imported by server on startup) |
+| `fastmcp_gtm_helpers.py` | Shared `mcp` instance, GTM client, validation, pagination, batch helpers |
 | `gtm_client_fixed.py` | GTM API client — service account auth, wraps `google-api-python-client` |
 | `gtm_components.py` | Local template builders — no API calls, produce JSON dicts for tags/triggers/variables |
 | `cli.py` | CLI entry point — 7 read-only subcommands, prints JSON to stdout |
@@ -39,7 +41,7 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 3. Requests scopes: `tagmanager.readonly`, `tagmanager.edit.containers`, `tagmanager.publish`
 4. Builds the `tagmanager` v2 service — no browser, no token file, fully headless
 
-## Implemented Tools (21)
+## Implemented Tools (18)
 
 ### Discovery
 
@@ -63,12 +65,10 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 
 | Tool | Description |
 |------|-------------|
-| `create_ga4_setup` | Full GA4 setup (config tag + events + triggers + variables) |
-| `create_facebook_pixel_setup` | Facebook Pixel base tag + triggers |
-| `create_complete_ecommerce_setup` | GA4 + FB Pixel + conversion tracking + form/click tracking |
+| `create_tag` | Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.) |
+| `create_trigger` | Custom event trigger |
 | `create_datalayer_variable` | Single Data Layer Variable |
 | `create_datalayer_variables_batch` | Multiple Data Layer Variables |
-| `create_trigger` | Custom event trigger |
 
 ### Modifying
 
@@ -115,12 +115,7 @@ list_gtm_tags → review consentSettings → update_tags_consent_settings_batch
 
 ### 4. Create & Publish
 ```
-create_ga4_setup / create_trigger / create_datalayer_variable → publish_gtm_container
-```
-
-### 5. Full Ecommerce Setup
-```
-test_gtm_connection → create_complete_ecommerce_setup → publish_gtm_container
+create_tag / create_trigger / create_datalayer_variable → publish_gtm_container
 ```
 
 ## GTM API v2 — Full Endpoint Reference
@@ -170,7 +165,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 |--------|-------------|------|
 | `tags.list` | Yes | `list_gtm_tags` |
 | `tags.get` | Yes | `get_gtm_tag` |
-| `tags.create` | Yes | `create_ga4_setup`, `create_facebook_pixel_setup`, `create_complete_ecommerce_setup` |
+| `tags.create` | Yes | `create_tag` |
 | `tags.update` | Yes | `update_tag_consent_settings`, `update_tags_consent_settings_batch`, `add_firing_trigger_to_tags_batch` |
 | `tags.delete` | No | — |
 | `tags.revert` | No | — |
@@ -181,7 +176,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 |--------|-------------|------|
 | `triggers.list` | Yes | `list_gtm_triggers` |
 | `triggers.get` | No | — |
-| `triggers.create` | Yes | `create_trigger`, `create_ga4_setup`, `create_facebook_pixel_setup`, `create_complete_ecommerce_setup` |
+| `triggers.create` | Yes | `create_trigger` |
 | `triggers.update` | No | — |
 | `triggers.delete` | No | — |
 | `triggers.revert` | No | — |
@@ -192,7 +187,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 |--------|-------------|------|
 | `variables.list` | Yes | `list_gtm_variables` |
 | `variables.get` | No | — |
-| `variables.create` | Yes | `create_datalayer_variable`, `create_datalayer_variables_batch`, `create_ga4_setup`, `create_complete_ecommerce_setup` |
+| `variables.create` | Yes | `create_datalayer_variable`, `create_datalayer_variables_batch` |
 | `variables.update` | No | — |
 | `variables.delete` | Yes | `delete_gtm_variable` |
 | `variables.revert` | No | — |

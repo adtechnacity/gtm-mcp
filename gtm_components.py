@@ -138,7 +138,7 @@ class GTMComponentTemplates:
                 {
                     'type': 'equals',
                     'parameter': [
-                        {'key': 'arg0', 'value': '{{Event}}', 'type': 'template'},
+                        {'key': 'arg0', 'value': '{{_event}}', 'type': 'template'},
                         {'key': 'arg1', 'value': event_name, 'type': 'template'}
                     ]
                 }
