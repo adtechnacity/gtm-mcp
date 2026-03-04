@@ -23,7 +23,7 @@ import asyncio
 from fastmcp_gtm_helpers import (
     mcp, get_gtm_client, _run, logger,
     HAS_GTM_COMPONENTS,
-    _validate_ids, _paginated_list,
+    _validate_ids, _paginated_list, _resolve_workspace_parent,
 )
 
 try:
@@ -189,15 +189,15 @@ async def list_gtm_variables(account_id: str, container_id: str, workspace_id: s
     Args:
         account_id: GTM Account ID
         container_id: GTM Container ID
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id)
         if error:
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
-        parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
+        workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
         variables = await _paginated_list(
             lambda **kw: client.service.accounts().containers().workspaces().variables().list(parent=parent, **kw),
@@ -234,15 +234,15 @@ async def list_gtm_tags(account_id: str, container_id: str, workspace_id: str = 
     Args:
         account_id: GTM Account ID
         container_id: GTM Container ID
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id)
         if error:
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
-        parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
+        workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
         tags = await _paginated_list(
             lambda **kw: client.service.accounts().containers().workspaces().tags().list(parent=parent, **kw),
@@ -298,15 +298,16 @@ async def get_gtm_tag(account_id: str, container_id: str, tag_id: str, workspace
         account_id: GTM Account ID
         container_id: GTM Container ID
         tag_id: The tag ID to retrieve
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
         if error:
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
-        path = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}/tags/{tag_id}"
+        workspace_id, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        path = f"{ws_parent}/tags/{tag_id}"
 
         tag = await _run(client.service.accounts().containers().workspaces().tags().get(
             path=path
@@ -333,15 +334,15 @@ async def list_gtm_triggers(account_id: str, container_id: str, workspace_id: st
     Args:
         account_id: GTM Account ID
         container_id: GTM Container ID
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id)
         if error:
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
-        parent = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
+        workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
         triggers = await _paginated_list(
             lambda **kw: client.service.accounts().containers().workspaces().triggers().list(parent=parent, **kw),
@@ -381,15 +382,16 @@ async def delete_gtm_variable(account_id: str, container_id: str, variable_id: s
         account_id: GTM Account ID
         container_id: GTM Container ID
         variable_id: The variable ID to delete
-        workspace_id: GTM Workspace ID (default "1")
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, variable_id=variable_id, workspace_id=workspace_id)
+        error = _validate_ids(account_id=account_id, container_id=container_id, variable_id=variable_id)
         if error:
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
-        path = f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}/variables/{variable_id}"
+        workspace_id, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        path = f"{ws_parent}/variables/{variable_id}"
 
         await _run(client.service.accounts().containers().workspaces().variables().delete(
             path=path

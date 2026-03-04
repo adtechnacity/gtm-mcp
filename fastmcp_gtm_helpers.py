@@ -63,6 +63,57 @@ except ImportError as e:
 
 MAX_BATCH_SIZE = 50
 
+# Cache for resolved workspace IDs: (account_id, container_id) → workspace_id
+_workspace_cache: dict[tuple[str, str], str] = {}
+
+
+async def _resolve_workspace_id(client, account_id: str, container_id: str, workspace_id: str) -> str:
+    """Resolve workspace_id, auto-detecting if the caller passed the default '1'.
+
+    GTM workspace IDs are not always '1'. When the default is used, this
+    function lists the container's workspaces and returns the first one found.
+    Results are cached per (account, container) pair for the server's lifetime.
+    """
+    if workspace_id != "1":
+        return workspace_id
+
+    cache_key = (account_id, container_id)
+    if cache_key in _workspace_cache:
+        return _workspace_cache[cache_key]
+
+    parent = f"accounts/{account_id}/containers/{container_id}"
+    result = await _run(
+        client.service.accounts().containers().workspaces().list(parent=parent)
+    )
+    workspaces = result.get("workspace", [])
+    if not workspaces:
+        logger.warning("No workspaces found for container %s; falling back to workspace_id='%s'", container_id, workspace_id)
+        return workspace_id
+
+    # Check if workspace "1" actually exists
+    ws_ids = [w.get("workspaceId") for w in workspaces if w.get("workspaceId")]
+    if not ws_ids:
+        logger.warning("No valid workspace IDs found for container %s", container_id)
+        return workspace_id
+    if "1" in ws_ids:
+        _workspace_cache[cache_key] = "1"
+        return "1"
+
+    # Use the first workspace found
+    resolved = ws_ids[0]
+    _workspace_cache[cache_key] = resolved
+    logger.info(
+        "Auto-resolved workspace_id to '%s' (container %s has no workspace '1')",
+        resolved, container_id,
+    )
+    return resolved
+
+
+async def _resolve_workspace_parent(client, account_id: str, container_id: str, workspace_id: str = "1") -> tuple[str, str]:
+    """Resolve workspace ID and build the workspace parent path in one call."""
+    ws_id = await _resolve_workspace_id(client, account_id, container_id, workspace_id)
+    return ws_id, f"accounts/{account_id}/containers/{container_id}/workspaces/{ws_id}"
+
 
 def _validate_gtm_id(value, name="ID"):
     """Validate that a GTM ID is a non-empty numeric string. Returns error message or None."""
