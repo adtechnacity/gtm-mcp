@@ -22,7 +22,29 @@ uv sync
 pip install -r requirements.txt
 ```
 
-### 2. Google Cloud Console Setup
+### 2. Create a Service Account
+
+#### Option A: Using gcloud CLI
+
+```bash
+# Create the service account
+gcloud iam service-accounts create gtm-mcp \
+  --project=YOUR_PROJECT_ID \
+  --display-name="GTM MCP Server" \
+  --description="Service account for GTM MCP server"
+
+# Download the key
+gcloud iam service-accounts keys create /path/to/sa-key.json \
+  --iam-account=gtm-mcp@YOUR_PROJECT_ID.iam.gserviceaccount.com
+```
+
+Then enable the Tag Manager API:
+
+```bash
+gcloud services enable tagmanager.googleapis.com --project=YOUR_PROJECT_ID
+```
+
+#### Option B: Using Google Cloud Console
 
 1. Go to the [Google Cloud Console](https://console.cloud.google.com/)
 2. Create a new project or select an existing one
@@ -31,8 +53,19 @@ pip install -r requirements.txt
 5. Click "Create Credentials" > "Service Account"
 6. Grant appropriate roles and click "Done"
 7. Click on the service account, go to "Keys" > "Add Key" > "Create new key" > JSON
-8. Download the JSON key file and set the `GOOGLE_APPLICATION_CREDENTIALS` env var to its path
-9. In GTM, go to Admin > User Management and add the service account email with Edit + Publish permissions
+8. Save the JSON key file
+
+#### Grant GTM Access
+
+Add the service account email (e.g. `gtm-mcp@YOUR_PROJECT_ID.iam.gserviceaccount.com`) as a user in GTM:
+- Go to GTM > Admin > Account > User Management
+- Add the service account email with **Edit** and **Publish** permissions
+
+Set the env var:
+
+```bash
+export GOOGLE_APPLICATION_CREDENTIALS=/path/to/sa-key.json
+```
 
 ### 3. Configure Your MCP Client
 
