@@ -1,10 +1,10 @@
 """
 Write MCP tools for Google Tag Manager.
 
-Registers 9 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
+Registers 10 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
 create_tag, create_trigger, create_datalayer_variable, create_datalayer_variables_batch,
 publish_gtm_container, update_tag_consent_settings, update_tags_consent_settings_batch,
-add_firing_trigger_to_tags_batch, update_tag_html.
+add_firing_trigger_to_tags_batch, add_blocking_trigger_to_tags_batch, update_tag_html.
 """
 import asyncio
 
@@ -274,6 +274,7 @@ async def create_trigger(
     container_id: str,
     trigger_name: str,
     event_name: str,
+    filters: list = None,
     workspace_id: str = "1"
 ) -> dict:
     """Create a custom event trigger in a GTM workspace.
@@ -282,11 +283,23 @@ async def create_trigger(
     is pushed to the dataLayer. For example, to fire on
     dataLayer.push({'event': 'consent_update'}), set event_name to "consent_update".
 
+    Optional ``filters`` adds AND-ed conditions on top of the event name match
+    (equivalent to the GTM UI "Fire on Some Custom Events" conditions). Each
+    item is a GTM Condition dict with ``type`` and ``parameter``, e.g.
+    ``{"type": "equals", "parameter": [{"key": "arg0", "value": "{{utm_source}}", "type": "template"},
+    {"key": "arg1", "value": "google_yt_el", "type": "template"}]}``.
+
+    Note: the GTM REST Condition schema has no ``negate`` flag. To express
+    "does not equal X", use ``type: "matchRegex"`` with a negative lookahead
+    pattern such as ``^(?!X$).*$``, or invert the intent and use the trigger
+    as a firing filter rather than an exception.
+
     Args:
         account_id: GTM Account ID
         container_id: GTM Container ID
         trigger_name: Display name for the trigger in GTM (e.g., "CE - consent_update")
         event_name: The custom event name to match (e.g., "consent_update")
+        filters: Optional list of GTM Condition dicts to AND with the event match
         workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
@@ -310,6 +323,8 @@ async def create_trigger(
                 }
             ]
         }
+        if filters:
+            trigger_body['filter'] = filters
 
         result = await _run(client.service.accounts().containers().workspaces().triggers().create(
             parent=parent,
@@ -322,6 +337,7 @@ async def create_trigger(
             "trigger_id": result.get('triggerId'),
             "trigger_name": trigger_name,
             "event_name": event_name,
+            "filters": filters or [],
             "path": result.get('path')
         }
     except Exception as e:
@@ -565,4 +581,55 @@ async def add_firing_trigger_to_tags_batch(
         return {
             "status": "error",
             "message": f"Failed to batch add firing trigger: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def add_blocking_trigger_to_tags_batch(
+    account_id: str,
+    container_id: str,
+    tag_ids: list,
+    trigger_id: str,
+    workspace_id: str = "1"
+) -> dict:
+    """Add a blocking (exception) trigger to multiple GTM tags.
+
+    Fetches each tag, appends the trigger ID to its blockingTriggerId list,
+    and updates it with fingerprint concurrency. Skips tags that already have
+    the trigger attached. A blocking trigger prevents the tag from firing
+    whenever its conditions match, even if a firing trigger also matches.
+
+    Use list_gtm_tags to find tag IDs and list_gtm_triggers or create_trigger
+    to get a trigger ID.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_ids: List of tag ID strings to update
+        trigger_id: The trigger ID to add as a blocking (exception) trigger
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, trigger_id=trigger_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        workspace_id, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+
+        def append_blocking(tag):
+            existing = tag.get('blockingTriggerId', [])
+            if trigger_id in existing:
+                return None
+            tag['blockingTriggerId'] = existing + [trigger_id]
+            return tag
+        return await _batch_update_tags(
+            client, prefix, tag_ids, append_blocking,
+            extra_fields_fn=lambda t: {"blocking_triggers": t.get("blockingTriggerId", [])},
+            skip_reason="Blocking trigger already attached",
+        )
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to batch add blocking trigger: {str(e)}"
         }
