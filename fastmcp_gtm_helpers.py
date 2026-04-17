@@ -180,8 +180,8 @@ async def _create_datalayer_var(client, parent, name, key):
     variable_body = {
         'name': name, 'type': 'v',
         'parameter': [
-            {'key': 'dataLayerVersion', 'value': '2', 'type': 'template'},
-            {'key': 'setDefaultValue', 'value': 'false', 'type': 'template'},
+            {'key': 'dataLayerVersion', 'value': '2', 'type': 'integer'},
+            {'key': 'setDefaultValue', 'value': 'false', 'type': 'boolean'},
             {'key': 'name', 'value': key, 'type': 'template'},
         ],
     }

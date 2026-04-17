@@ -1,10 +1,10 @@
 """
 Write MCP tools for Google Tag Manager.
 
-Registers 8 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
+Registers 9 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
 create_tag, create_trigger, create_datalayer_variable, create_datalayer_variables_batch,
 publish_gtm_container, update_tag_consent_settings, update_tags_consent_settings_batch,
-add_firing_trigger_to_tags_batch.
+add_firing_trigger_to_tags_batch, update_tag_html.
 """
 import asyncio
 
@@ -192,8 +192,8 @@ async def create_datalayer_variable(account_id: str, container_id: str, variable
             'name': variable_name,
             'type': 'v',  # Data Layer Variable type
             'parameter': [
-                {'key': 'dataLayerVersion', 'value': '2', 'type': 'template'},
-                {'key': 'setDefaultValue', 'value': 'false', 'type': 'template'},
+                {'key': 'dataLayerVersion', 'value': '2', 'type': 'integer'},
+                {'key': 'setDefaultValue', 'value': 'false', 'type': 'boolean'},
                 {'key': 'name', 'value': datalayer_key, 'type': 'template'}
             ]
         }
@@ -441,6 +441,78 @@ async def update_tags_consent_settings_batch(
         return {
             "status": "error",
             "message": f"Failed to batch update consent settings: {str(e)}"
+        }
+
+
+# ---------------------------------------------------------------------------
+# Update tag HTML
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def update_tag_html(
+    account_id: str,
+    container_id: str,
+    tag_id: str,
+    html: str,
+    workspace_id: str = "1",
+) -> dict:
+    """Update the HTML content of a Custom HTML tag.
+
+    Fetches the tag, replaces its ``html`` parameter value, and saves it back
+    using fingerprint-based optimistic concurrency. Only works on tags of type
+    ``html`` (Custom HTML). Returns an error if the tag is not a Custom HTML
+    tag or if the ``html`` parameter is not found.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_id: The tag ID to update
+        html: The new HTML content (including <script> tags)
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        workspace_id, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        path = f"{ws_parent}/tags/{tag_id}"
+
+        tag = await _run(client.service.accounts().containers().workspaces().tags().get(path=path))
+
+        if tag.get("type") != "html":
+            return {
+                "status": "error",
+                "message": f"Tag '{tag.get('name')}' is type '{tag.get('type')}', not 'html'. Only Custom HTML tags can be updated with this tool.",
+            }
+
+        params = tag.get("parameter", [])
+        html_param = next((p for p in params if p.get("key") == "html"), None)
+        if html_param is None:
+            return {
+                "status": "error",
+                "message": f"Tag '{tag.get('name')}' has no 'html' parameter.",
+            }
+
+        html_param["value"] = html
+
+        updated = await _run(
+            client.service.accounts().containers().workspaces().tags().update(
+                path=path, body=tag, fingerprint=tag.get("fingerprint")
+            )
+        )
+
+        return {
+            "status": "success",
+            "message": f"HTML updated for tag '{updated.get('name')}'",
+            "tag_id": tag_id,
+            "tag_name": updated.get("name"),
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to update tag HTML: {str(e)}",
         }
 
 
