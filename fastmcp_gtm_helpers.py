@@ -256,3 +256,37 @@ async def _append_trigger_to_tags_batch(
         extra_fields_fn=lambda t: {label: t.get(field, [])},
         skip_reason=skip_reason,
     )
+
+
+async def _remove_trigger_from_tags_batch(
+    client, path_prefix, tag_ids, trigger_id, *, field, label, skip_reason
+):
+    """Remove a trigger ID from ``firingTriggerId`` or ``blockingTriggerId`` across tags."""
+    def remove(tag):
+        existing = tag.get(field, [])
+        if trigger_id not in existing:
+            return None
+        tag[field] = [t for t in existing if t != trigger_id]
+        return tag
+    return await _batch_update_tags(
+        client, path_prefix, tag_ids, remove,
+        extra_fields_fn=lambda t: {label: t.get(field, [])},
+        skip_reason=skip_reason,
+    )
+
+
+async def _set_triggers_on_tags_batch(
+    client, path_prefix, tag_ids, trigger_ids, *, field, label, skip_reason
+):
+    """Replace the ``firingTriggerId`` or ``blockingTriggerId`` list with ``trigger_ids``."""
+    new_list = list(trigger_ids)
+    def set_list(tag):
+        if tag.get(field, []) == new_list:
+            return None
+        tag[field] = new_list
+        return tag
+    return await _batch_update_tags(
+        client, path_prefix, tag_ids, set_list,
+        extra_fields_fn=lambda t: {label: t.get(field, [])},
+        skip_reason=skip_reason,
+    )

@@ -100,7 +100,7 @@ Or using the installed entry point:
 }
 ```
 
-## Available Tools (20)
+## Available Tools (25)
 
 ### Discovery
 - `test_gtm_connection` — Verify service account credentials
@@ -116,19 +116,24 @@ Or using the installed entry point:
 
 ### Creating
 - `create_tag` — Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.)
-- `create_trigger` — Create a custom event trigger (optional `filters` for extra AND conditions)
+- `create_trigger` — Create any GTM trigger type (customEvent, pageview, init, domReady, etc.); optional `filters` adds AND conditions
 - `create_datalayer_variable` — Create a single Data Layer Variable
 - `create_datalayer_variables_batch` — Create multiple Data Layer Variables
+- `create_js_variable` — Create a Custom JavaScript variable (type `jsm`)
 
 ### Modifying
 - `update_tag_consent_settings` — Set consent config for one tag
 - `update_tags_consent_settings_batch` — Set consent config for multiple tags
 - `update_tag_html` — Replace the HTML body of a Custom HTML tag
-- `add_firing_trigger_to_tags_batch` — Add a firing trigger to multiple tags
-- `add_blocking_trigger_to_tags_batch` — Add a blocking (exception) trigger to multiple tags
+- `add_firing_trigger_to_tags_batch` — Append a firing trigger to multiple tags
+- `add_blocking_trigger_to_tags_batch` — Append a blocking (exception) trigger to multiple tags
+- `set_firing_triggers_on_tags_batch` — Replace the firing-trigger list on multiple tags (useful for migrating between triggers)
+- `remove_firing_trigger_from_tags_batch` — Detach a specific firing trigger from multiple tags
+- `remove_blocking_trigger_from_tags_batch` — Detach a specific blocking trigger from multiple tags
 
 ### Deleting
 - `delete_gtm_variable` — Delete a variable from workspace
+- `delete_trigger` — Delete a trigger from workspace (detach from tags first to avoid dangling references)
 
 ### Publishing
 - `publish_gtm_container` — Create version from workspace and publish
