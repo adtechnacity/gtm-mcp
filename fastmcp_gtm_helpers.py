@@ -180,8 +180,8 @@ async def _create_datalayer_var(client, parent, name, key):
     variable_body = {
         'name': name, 'type': 'v',
         'parameter': [
-            {'key': 'dataLayerVersion', 'value': '2', 'type': 'template'},
-            {'key': 'setDefaultValue', 'value': 'false', 'type': 'template'},
+            {'key': 'dataLayerVersion', 'value': '2', 'type': 'integer'},
+            {'key': 'setDefaultValue', 'value': 'false', 'type': 'boolean'},
             {'key': 'name', 'value': key, 'type': 'template'},
         ],
     }
@@ -239,3 +239,54 @@ async def _batch_update_tags(client, path_prefix, tag_ids, mutate_fn,
     results["status"] = "error" if n_failed and not n_updated else "partial" if n_failed else "success"
     results["summary"] = f"Updated {n_updated}/{len(tag_ids)} tags, skipped {n_skipped}, failed {n_failed}"
     return results
+
+
+async def _append_trigger_to_tags_batch(
+    client, path_prefix, tag_ids, trigger_id, *, field, label, skip_reason
+):
+    """Append a trigger ID to either ``firingTriggerId`` or ``blockingTriggerId`` across tags."""
+    def append(tag):
+        existing = tag.get(field, [])
+        if trigger_id in existing:
+            return None
+        tag[field] = existing + [trigger_id]
+        return tag
+    return await _batch_update_tags(
+        client, path_prefix, tag_ids, append,
+        extra_fields_fn=lambda t: {label: t.get(field, [])},
+        skip_reason=skip_reason,
+    )
+
+
+async def _remove_trigger_from_tags_batch(
+    client, path_prefix, tag_ids, trigger_id, *, field, label, skip_reason
+):
+    """Remove a trigger ID from ``firingTriggerId`` or ``blockingTriggerId`` across tags."""
+    def remove(tag):
+        existing = tag.get(field, [])
+        if trigger_id not in existing:
+            return None
+        tag[field] = [t for t in existing if t != trigger_id]
+        return tag
+    return await _batch_update_tags(
+        client, path_prefix, tag_ids, remove,
+        extra_fields_fn=lambda t: {label: t.get(field, [])},
+        skip_reason=skip_reason,
+    )
+
+
+async def _set_triggers_on_tags_batch(
+    client, path_prefix, tag_ids, trigger_ids, *, field, label, skip_reason
+):
+    """Replace the ``firingTriggerId`` or ``blockingTriggerId`` list with ``trigger_ids``."""
+    new_list = list(trigger_ids)
+    def set_list(tag):
+        if tag.get(field, []) == new_list:
+            return None
+        tag[field] = new_list
+        return tag
+    return await _batch_update_tags(
+        client, path_prefix, tag_ids, set_list,
+        extra_fields_fn=lambda t: {label: t.get(field, [])},
+        skip_reason=skip_reason,
+    )

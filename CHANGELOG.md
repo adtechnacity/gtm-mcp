@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.2.0] - 2026-04-17
+
+### Added
+- `create_js_variable` tool — create a Custom JavaScript variable (type `jsm`)
+- `update_tag_html` tool — replace the HTML body of a Custom HTML tag (guards on `type == "html"`, uses fingerprint concurrency)
+- `delete_trigger` tool — delete a trigger from a workspace
+- `add_blocking_trigger_to_tags_batch` tool — attach a blocking (exception) trigger to multiple tags
+- `set_firing_triggers_on_tags_batch` tool — replace the firing-trigger list on multiple tags (for migrating between triggers in a single call)
+- `remove_firing_trigger_from_tags_batch` tool — detach a specific firing trigger from multiple tags
+- `remove_blocking_trigger_from_tags_batch` tool — detach a specific blocking trigger from multiple tags
+- `create_trigger` now supports all common GTM trigger types via `trigger_type` parameter (`pageview`, `init`, `consentInit`, `domReady`, `windowLoaded`, `click`, `linkClick`, `formSubmission`, `scrollDepth`, `elementVisibility`, `timer`, `historyChange`, `youTubeVideo`, `triggerGroup`, `pageviewGtm`, `serverPageview`, plus `customEvent`)
+- `create_trigger` accepts optional `filters` — additional GTM Condition dicts AND-ed with the trigger's base match (maps to the trigger body's `filter` field)
+
+### Changed
+- `create_trigger` validates `trigger_type` against the supported set and `filters` shape client-side (each entry must be `{type: str, parameter: [{key, value, type}, ...]}`)
+- `create_trigger` no longer requires `event_name` except when `trigger_type == "customEvent"`
+- `add_firing_trigger_to_tags_batch`, `add_blocking_trigger_to_tags_batch`, `set_firing_triggers_on_tags_batch`, `remove_firing_trigger_from_tags_batch`, and `remove_blocking_trigger_from_tags_batch` share helpers in `fastmcp_gtm_helpers` (`_append_trigger_to_tags_batch`, `_remove_trigger_from_tags_batch`, `_set_triggers_on_tags_batch`) on top of the existing `_batch_update_tags` primitive
+
+### Fixed
+- Data Layer Variable creation now sends `dataLayerVersion` as `integer` and `setDefaultValue` as `boolean`, matching the GTM Parameter schema (previously sent as `template`, which GTM tolerated but misrepresented)
+
 ## [0.1.1] - 2026-03-04
 
 ### Fixed

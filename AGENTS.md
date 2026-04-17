@@ -66,9 +66,10 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 | Tool | Description |
 |------|-------------|
 | `create_tag` | Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.) |
-| `create_trigger` | Custom event trigger |
+| `create_trigger` | Create any GTM trigger type (customEvent, pageview, init, domReady, etc.); optional `filters` adds AND conditions |
 | `create_datalayer_variable` | Single Data Layer Variable |
 | `create_datalayer_variables_batch` | Multiple Data Layer Variables |
+| `create_js_variable` | Custom JavaScript variable (type `jsm`) |
 
 ### Modifying
 
@@ -76,13 +77,19 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 |------|-------------|
 | `update_tag_consent_settings` | Set consent config for one tag |
 | `update_tags_consent_settings_batch` | Set consent config for multiple tags |
-| `add_firing_trigger_to_tags_batch` | Add a trigger to multiple tags |
+| `update_tag_html` | Replace the HTML body of a Custom HTML tag |
+| `add_firing_trigger_to_tags_batch` | Append a firing trigger to multiple tags |
+| `add_blocking_trigger_to_tags_batch` | Append a blocking (exception) trigger to multiple tags |
+| `set_firing_triggers_on_tags_batch` | Replace the firing-trigger list on multiple tags |
+| `remove_firing_trigger_from_tags_batch` | Detach a specific firing trigger from multiple tags |
+| `remove_blocking_trigger_from_tags_batch` | Detach a specific blocking trigger from multiple tags |
 
 ### Deleting
 
 | Tool | Description |
 |------|-------------|
 | `delete_gtm_variable` | Delete a variable from workspace |
+| `delete_trigger` | Delete a trigger from workspace |
 
 ### Publishing
 
@@ -115,12 +122,29 @@ list_gtm_tags → review consentSettings → update_tags_consent_settings_batch
 
 ### 4. Create & Publish
 ```
-create_tag / create_trigger / create_datalayer_variable → publish_gtm_container
+create_tag / create_trigger / create_datalayer_variable / create_js_variable → publish_gtm_container
+```
+
+### 5. Trigger Migration (swap firing trigger on existing tags)
+```
+create_trigger(new) → set_firing_triggers_on_tags_batch(tag_ids, [new_trigger_id])
+    or
+create_trigger(new) → add_firing_trigger_to_tags_batch(tag_ids, new_trigger_id)
+                   → remove_firing_trigger_from_tags_batch(tag_ids, old_trigger_id)
+                   → delete_trigger(old_trigger_id)
+```
+
+### 6. Consent-Aware Filtering (Exception / Guard Trigger)
+```
+create_js_variable(is_<cohort>_source) → create_trigger(customEvent + filters on variable)
+    → add_blocking_trigger_to_tags_batch(tag_ids, trigger_id)   # exception
+    or
+    → set_firing_triggers_on_tags_batch(tag_ids, [trigger_id])  # replace firing
 ```
 
 ## GTM API v2 — Full Endpoint Reference
 
-The GTM API v2 has 18 resource families with ~105 methods total. This server currently implements 14 unique API methods. The table below shows implementation status.
+The GTM API v2 has 18 resource families with ~105 methods total. This server currently implements 15 unique API methods. The table below shows implementation status.
 
 ### accounts
 
@@ -166,7 +190,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 | `tags.list` | Yes | `list_gtm_tags` |
 | `tags.get` | Yes | `get_gtm_tag` |
 | `tags.create` | Yes | `create_tag` |
-| `tags.update` | Yes | `update_tag_consent_settings`, `update_tags_consent_settings_batch`, `add_firing_trigger_to_tags_batch` |
+| `tags.update` | Yes | `update_tag_consent_settings`, `update_tags_consent_settings_batch`, `update_tag_html`, `add_firing_trigger_to_tags_batch`, `add_blocking_trigger_to_tags_batch`, `set_firing_triggers_on_tags_batch`, `remove_firing_trigger_from_tags_batch`, `remove_blocking_trigger_from_tags_batch` |
 | `tags.delete` | No | — |
 | `tags.revert` | No | — |
 
@@ -178,7 +202,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 | `triggers.get` | No | — |
 | `triggers.create` | Yes | `create_trigger` |
 | `triggers.update` | No | — |
-| `triggers.delete` | No | — |
+| `triggers.delete` | Yes | `delete_trigger` |
 | `triggers.revert` | No | — |
 
 ### accounts.containers.workspaces.variables
@@ -187,7 +211,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 |--------|-------------|------|
 | `variables.list` | Yes | `list_gtm_variables` |
 | `variables.get` | No | — |
-| `variables.create` | Yes | `create_datalayer_variable`, `create_datalayer_variables_batch` |
+| `variables.create` | Yes | `create_datalayer_variable`, `create_datalayer_variables_batch`, `create_js_variable` |
 | `variables.update` | No | — |
 | `variables.delete` | Yes | `delete_gtm_variable` |
 | `variables.revert` | No | — |

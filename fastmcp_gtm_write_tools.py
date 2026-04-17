@@ -1,10 +1,13 @@
 """
 Write MCP tools for Google Tag Manager.
 
-Registers 8 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
+Registers 15 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
 create_tag, create_trigger, create_datalayer_variable, create_datalayer_variables_batch,
-publish_gtm_container, update_tag_consent_settings, update_tags_consent_settings_batch,
-add_firing_trigger_to_tags_batch.
+create_js_variable, publish_gtm_container, update_tag_consent_settings,
+update_tags_consent_settings_batch, update_tag_html, delete_trigger,
+add_firing_trigger_to_tags_batch, add_blocking_trigger_to_tags_batch,
+set_firing_triggers_on_tags_batch, remove_firing_trigger_from_tags_batch,
+remove_blocking_trigger_from_tags_batch.
 """
 import asyncio
 
@@ -15,6 +18,9 @@ from fastmcp_gtm_helpers import (
     _validate_consent_params, _build_consent_settings,
     _validate_ids, _resolve_workspace_parent,
     _batch_update_tags,
+    _append_trigger_to_tags_batch,
+    _remove_trigger_from_tags_batch,
+    _set_triggers_on_tags_batch,
 )
 
 
@@ -192,8 +198,8 @@ async def create_datalayer_variable(account_id: str, container_id: str, variable
             'name': variable_name,
             'type': 'v',  # Data Layer Variable type
             'parameter': [
-                {'key': 'dataLayerVersion', 'value': '2', 'type': 'template'},
-                {'key': 'setDefaultValue', 'value': 'false', 'type': 'template'},
+                {'key': 'dataLayerVersion', 'value': '2', 'type': 'integer'},
+                {'key': 'setDefaultValue', 'value': 'false', 'type': 'boolean'},
                 {'key': 'name', 'value': datalayer_key, 'type': 'template'}
             ]
         }
@@ -264,43 +270,183 @@ async def create_datalayer_variables_batch(account_id: str, container_id: str, v
         }
 
 
-# ---------------------------------------------------------------------------
-# Triggers
-# ---------------------------------------------------------------------------
-
 @mcp.tool()
-async def create_trigger(
+async def create_js_variable(
     account_id: str,
     container_id: str,
-    trigger_name: str,
-    event_name: str,
+    variable_name: str,
+    javascript: str,
     workspace_id: str = "1"
 ) -> dict:
-    """Create a custom event trigger in a GTM workspace.
+    """Create a Custom JavaScript variable in a GTM workspace.
 
-    Creates a trigger of type 'customEvent' that fires when a matching event
-    is pushed to the dataLayer. For example, to fire on
-    dataLayer.push({'event': 'consent_update'}), set event_name to "consent_update".
+    Creates a variable of type ``jsm`` whose value is computed by the provided
+    JavaScript function. The ``javascript`` argument must be a full anonymous
+    function expression that returns the value — GTM evaluates it at tag fire
+    time and uses the return value.
+
+    Example:
+
+        create_js_variable(
+            account_id, container_id,
+            variable_name="JS - is_google_yt_el_source",
+            javascript="function() { return {{utm_source}} === 'google_yt_el'; }",
+        )
+
+    Reference other GTM variables inside the function with ``{{Variable Name}}``
+    — the GTM parameter ``type`` is ``template`` so placeholders are resolved
+    before execution.
 
     Args:
         account_id: GTM Account ID
         container_id: GTM Container ID
-        trigger_name: Display name for the trigger in GTM (e.g., "CE - consent_update")
-        event_name: The custom event name to match (e.g., "consent_update")
+        variable_name: Display name for the variable in GTM (e.g., "JS - is_google_yt_el_source")
+        javascript: The function source as a string (must be a function that returns a value)
         workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
         error = _validate_ids(account_id=account_id, container_id=container_id)
         if error:
             return {"status": "error", "message": error}
+        if not isinstance(javascript, str) or not javascript.strip():
+            return {"status": "error", "message": "javascript must be a non-empty string"}
+
+        client = get_gtm_client()
+        _, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+
+        variable_body = {
+            'name': variable_name,
+            'type': 'jsm',
+            'parameter': [
+                {'key': 'javascript', 'value': javascript, 'type': 'template'}
+            ]
+        }
+
+        result = await _run(client.service.accounts().containers().workspaces().variables().create(
+            parent=parent,
+            body=variable_body
+        ))
+
+        return {
+            "status": "success",
+            "message": f"Custom JavaScript variable '{variable_name}' created successfully",
+            "variable_id": result.get('variableId'),
+            "variable_name": variable_name,
+            "path": result.get('path')
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to create Custom JavaScript variable: {str(e)}"
+        }
+
+
+# ---------------------------------------------------------------------------
+# Triggers
+# ---------------------------------------------------------------------------
+
+def _validate_trigger_filters(filters):
+    """Validate user-provided trigger filter conditions.
+
+    Each item must be a dict with string ``type`` and list ``parameter``,
+    where each parameter is a dict with ``key``, ``value``, and ``type``.
+    Returns an error message string, or None if valid.
+    """
+    if not isinstance(filters, list):
+        return "filters must be a list of condition dicts"
+    for i, cond in enumerate(filters):
+        if not isinstance(cond, dict):
+            return f"filters[{i}] must be a dict"
+        if not isinstance(cond.get("type"), str) or not cond["type"]:
+            return f"filters[{i}].type must be a non-empty string"
+        params = cond.get("parameter")
+        if not isinstance(params, list) or not params:
+            return f"filters[{i}].parameter must be a non-empty list"
+        for j, p in enumerate(params):
+            if not isinstance(p, dict) or not all(isinstance(p.get(k), str) for k in ("key", "value", "type")):
+                return f"filters[{i}].parameter[{j}] must be a dict with string key/value/type"
+    return None
+
+
+_VALID_TRIGGER_TYPES = {
+    "pageview", "domReady", "windowLoaded", "customEvent", "click", "linkClick",
+    "formSubmission", "timer", "elementVisibility", "historyChange", "scrollDepth",
+    "youTubeVideo", "init", "consentInit", "pageviewGtm", "serverPageview",
+    "triggerGroup",
+}
+
+
+@mcp.tool()
+async def create_trigger(
+    account_id: str,
+    container_id: str,
+    trigger_name: str,
+    event_name: str | None = None,
+    trigger_type: str = "customEvent",
+    filters: list[dict] | None = None,
+    workspace_id: str = "1"
+) -> dict:
+    """Create a trigger in a GTM workspace.
+
+    Supports the common GTM trigger types. The most common are:
+
+    - ``customEvent`` (default) — fires on ``dataLayer.push({'event': <name>})``.
+      Requires ``event_name``. Example: set ``event_name="consent_update"`` to
+      fire on ``dataLayer.push({'event': 'consent_update'})``.
+    - ``pageview`` — fires when gtm.js runs (first paint-ish).
+    - ``init`` — Init-All-Pages; fires before the standard pageview trigger.
+    - ``consentInit`` — fires before ``init``, intended for consent defaults.
+    - ``domReady`` / ``windowLoaded`` — standard page lifecycle triggers.
+    - ``click`` / ``linkClick`` / ``formSubmission`` / ``scrollDepth`` /
+      ``elementVisibility`` / ``timer`` / ``historyChange`` / ``youTubeVideo`` /
+      ``triggerGroup`` / ``pageviewGtm`` / ``serverPageview``.
+
+    ``event_name`` is only used when ``trigger_type == "customEvent"`` (it is
+    ignored for other types). For ``customEvent`` triggers without ``event_name``
+    you get a validation error.
+
+    Optional ``filters`` adds AND-ed conditions to the trigger (equivalent to
+    the GTM UI "Fire on Some ..." conditions). Each item is a GTM Condition
+    dict with ``type`` and ``parameter``, e.g.
+    ``{"type": "equals", "parameter": [{"key": "arg0", "value": "{{utm_source}}", "type": "template"},
+    {"key": "arg1", "value": "google_yt_el", "type": "template"}]}``.
+
+    Note: the GTM REST Condition schema has no ``negate`` flag. To express
+    "does not equal X", use ``type: "matchRegex"`` with a negative lookahead
+    pattern such as ``^(?!X$).*$``, or invert the intent (use the trigger as
+    a firing filter rather than an exception).
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        trigger_name: Display name for the trigger in GTM (e.g., "CE - consent_update")
+        event_name: The custom event name to match — required when trigger_type is "customEvent"
+        trigger_type: GTM trigger type (default "customEvent"). See list above.
+        filters: Optional list of GTM Condition dicts to AND with the trigger's base match
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id)
+        if error:
+            return {"status": "error", "message": error}
+        if trigger_type not in _VALID_TRIGGER_TYPES:
+            return {"status": "error", "message": f"Unsupported trigger_type '{trigger_type}'. Valid: {sorted(_VALID_TRIGGER_TYPES)}"}
+        if trigger_type == "customEvent" and not event_name:
+            return {"status": "error", "message": "event_name is required when trigger_type is 'customEvent'"}
+        if filters is not None:
+            filter_error = _validate_trigger_filters(filters)
+            if filter_error:
+                return {"status": "error", "message": filter_error}
 
         client = get_gtm_client()
         workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
-        trigger_body = {
+        trigger_body: dict = {
             'name': trigger_name,
-            'type': 'customEvent',
-            'customEventFilter': [
+            'type': trigger_type,
+        }
+        if trigger_type == "customEvent":
+            trigger_body['customEventFilter'] = [
                 {
                     'type': 'equals',
                     'parameter': [
@@ -309,7 +455,8 @@ async def create_trigger(
                     ]
                 }
             ]
-        }
+        if filters:
+            trigger_body['filter'] = filters
 
         result = await _run(client.service.accounts().containers().workspaces().triggers().create(
             parent=parent,
@@ -318,16 +465,67 @@ async def create_trigger(
 
         return {
             "status": "success",
-            "message": f"Custom event trigger '{trigger_name}' created successfully",
+            "message": f"{trigger_type} trigger '{trigger_name}' created successfully",
             "trigger_id": result.get('triggerId'),
             "trigger_name": trigger_name,
-            "event_name": event_name,
+            "trigger_type": trigger_type,
+            "event_name": event_name if trigger_type == "customEvent" else None,
+            "filters": filters or [],
             "path": result.get('path')
         }
     except Exception as e:
         return {
             "status": "error",
             "message": f"Failed to create trigger: {str(e)}"
+        }
+
+
+# ---------------------------------------------------------------------------
+# Trigger deletion
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def delete_trigger(
+    account_id: str,
+    container_id: str,
+    trigger_id: str,
+    workspace_id: str = "1"
+) -> dict:
+    """Delete a trigger from a GTM workspace.
+
+    Removes the trigger resource entirely. Tags that reference this trigger via
+    ``firingTriggerId`` or ``blockingTriggerId`` will have dangling references
+    after deletion — detach the trigger from tags first via
+    ``remove_firing_trigger_from_tags_batch`` or
+    ``remove_blocking_trigger_from_tags_batch``, or by replacing the firing list
+    via ``set_firing_triggers_on_tags_batch``.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        trigger_id: The trigger ID to delete
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, trigger_id=trigger_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        path = f"{parent}/triggers/{trigger_id}"
+
+        await _run(client.service.accounts().containers().workspaces().triggers().delete(path=path))
+
+        return {
+            "status": "success",
+            "message": f"Trigger '{trigger_id}' deleted",
+            "trigger_id": trigger_id,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to delete trigger: {str(e)}"
         }
 
 
@@ -445,6 +643,78 @@ async def update_tags_consent_settings_batch(
 
 
 # ---------------------------------------------------------------------------
+# Update tag HTML
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def update_tag_html(
+    account_id: str,
+    container_id: str,
+    tag_id: str,
+    html: str,
+    workspace_id: str = "1",
+) -> dict:
+    """Update the HTML content of a Custom HTML tag.
+
+    Fetches the tag, replaces its ``html`` parameter value, and saves it back
+    using fingerprint-based optimistic concurrency. Only works on tags of type
+    ``html`` (Custom HTML). Returns an error if the tag is not a Custom HTML
+    tag or if the ``html`` parameter is not found.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_id: The tag ID to update
+        html: The new HTML content (including <script> tags)
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        workspace_id, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        path = f"{ws_parent}/tags/{tag_id}"
+
+        tag = await _run(client.service.accounts().containers().workspaces().tags().get(path=path))
+
+        if tag.get("type") != "html":
+            return {
+                "status": "error",
+                "message": f"Tag '{tag.get('name')}' is type '{tag.get('type')}', not 'html'. Only Custom HTML tags can be updated with this tool.",
+            }
+
+        params = tag.get("parameter", [])
+        html_param = next((p for p in params if p.get("key") == "html"), None)
+        if html_param is None:
+            return {
+                "status": "error",
+                "message": f"Tag '{tag.get('name')}' has no 'html' parameter.",
+            }
+
+        html_param["value"] = html
+
+        updated = await _run(
+            client.service.accounts().containers().workspaces().tags().update(
+                path=path, body=tag, fingerprint=tag.get("fingerprint")
+            )
+        )
+
+        return {
+            "status": "success",
+            "message": f"HTML updated for tag '{updated.get('name')}'",
+            "tag_id": tag_id,
+            "tag_name": updated.get("name"),
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to update tag HTML: {str(e)}",
+        }
+
+
+# ---------------------------------------------------------------------------
 # Batch trigger attachment
 # ---------------------------------------------------------------------------
 
@@ -476,21 +746,199 @@ async def add_firing_trigger_to_tags_batch(
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
-        workspace_id, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        _, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
-        def append_trigger(tag):
-            existing = tag.get('firingTriggerId', [])
-            if trigger_id in existing:
-                return None
-            tag['firingTriggerId'] = existing + [trigger_id]
-            return tag
-        return await _batch_update_tags(
-            client, prefix, tag_ids, append_trigger,
-            extra_fields_fn=lambda t: {"firing_triggers": t.get("firingTriggerId", [])},
+        return await _append_trigger_to_tags_batch(
+            client, prefix, tag_ids, trigger_id,
+            field="firingTriggerId",
+            label="firing_triggers",
             skip_reason="Trigger already attached",
         )
     except Exception as e:
         return {
             "status": "error",
             "message": f"Failed to batch add firing trigger: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def add_blocking_trigger_to_tags_batch(
+    account_id: str,
+    container_id: str,
+    tag_ids: list,
+    trigger_id: str,
+    workspace_id: str = "1"
+) -> dict:
+    """Add a blocking (exception) trigger to multiple GTM tags.
+
+    Fetches each tag, appends the trigger ID to its blockingTriggerId list,
+    and updates it with fingerprint concurrency. Skips tags that already have
+    the trigger attached. A blocking trigger prevents the tag from firing
+    whenever its conditions match, even if a firing trigger also matches.
+
+    Use list_gtm_tags to find tag IDs and list_gtm_triggers or create_trigger
+    to get a trigger ID.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_ids: List of tag ID strings to update
+        trigger_id: The trigger ID to add as a blocking (exception) trigger
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, trigger_id=trigger_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+
+        return await _append_trigger_to_tags_batch(
+            client, prefix, tag_ids, trigger_id,
+            field="blockingTriggerId",
+            label="blocking_triggers",
+            skip_reason="Blocking trigger already attached",
+        )
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to batch add blocking trigger: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def set_firing_triggers_on_tags_batch(
+    account_id: str,
+    container_id: str,
+    tag_ids: list,
+    trigger_ids: list,
+    workspace_id: str = "1"
+) -> dict:
+    """Replace the firing trigger list on multiple GTM tags.
+
+    Overwrites each tag's ``firingTriggerId`` with ``trigger_ids`` verbatim —
+    existing firing triggers not in ``trigger_ids`` are detached, and triggers
+    in ``trigger_ids`` not already attached are added. Useful for migrating
+    tags from an old trigger to a new one in a single call.
+
+    Skips tags whose firing list is already equal to ``trigger_ids``. Uses
+    fingerprint-based optimistic concurrency per tag.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_ids: List of tag ID strings to update
+        trigger_ids: The complete list of trigger IDs to set as firing triggers.
+                     Pass an empty list to detach all firing triggers (tag will
+                     not fire until a trigger is added back).
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id)
+        if error:
+            return {"status": "error", "message": error}
+        if not isinstance(trigger_ids, list):
+            return {"status": "error", "message": "trigger_ids must be a list of trigger ID strings"}
+        for i, tid in enumerate(trigger_ids):
+            if not isinstance(tid, str) or not tid.isdigit():
+                return {"status": "error", "message": f"trigger_ids[{i}] must be a numeric string"}
+
+        client = get_gtm_client()
+        _, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+
+        return await _set_triggers_on_tags_batch(
+            client, prefix, tag_ids, trigger_ids,
+            field="firingTriggerId",
+            label="firing_triggers",
+            skip_reason="Firing triggers already match",
+        )
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to batch set firing triggers: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def remove_firing_trigger_from_tags_batch(
+    account_id: str,
+    container_id: str,
+    tag_ids: list,
+    trigger_id: str,
+    workspace_id: str = "1"
+) -> dict:
+    """Remove a firing trigger from multiple GTM tags.
+
+    Detaches ``trigger_id`` from each tag's ``firingTriggerId`` list. Other
+    firing triggers on the tag are preserved. Skips tags that do not have the
+    trigger attached. Uses fingerprint-based optimistic concurrency.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_ids: List of tag ID strings to update
+        trigger_id: The trigger ID to detach from firingTriggerId
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, trigger_id=trigger_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+
+        return await _remove_trigger_from_tags_batch(
+            client, prefix, tag_ids, trigger_id,
+            field="firingTriggerId",
+            label="firing_triggers",
+            skip_reason="Firing trigger not attached",
+        )
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to batch remove firing trigger: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def remove_blocking_trigger_from_tags_batch(
+    account_id: str,
+    container_id: str,
+    tag_ids: list,
+    trigger_id: str,
+    workspace_id: str = "1"
+) -> dict:
+    """Remove a blocking (exception) trigger from multiple GTM tags.
+
+    Detaches ``trigger_id`` from each tag's ``blockingTriggerId`` list. Other
+    blocking triggers on the tag are preserved. Skips tags that do not have
+    the trigger attached. Uses fingerprint-based optimistic concurrency.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_ids: List of tag ID strings to update
+        trigger_id: The trigger ID to detach from blockingTriggerId
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, trigger_id=trigger_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+
+        return await _remove_trigger_from_tags_batch(
+            client, prefix, tag_ids, trigger_id,
+            field="blockingTriggerId",
+            label="blocking_triggers",
+            skip_reason="Blocking trigger not attached",
+        )
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to batch remove blocking trigger: {str(e)}"
         }
