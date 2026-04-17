@@ -66,7 +66,7 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 | Tool | Description |
 |------|-------------|
 | `create_tag` | Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.) |
-| `create_trigger` | Custom event trigger |
+| `create_trigger` | Custom event trigger (optional `filters` for extra AND conditions) |
 | `create_datalayer_variable` | Single Data Layer Variable |
 | `create_datalayer_variables_batch` | Multiple Data Layer Variables |
 
@@ -76,7 +76,9 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 |------|-------------|
 | `update_tag_consent_settings` | Set consent config for one tag |
 | `update_tags_consent_settings_batch` | Set consent config for multiple tags |
-| `add_firing_trigger_to_tags_batch` | Add a trigger to multiple tags |
+| `update_tag_html` | Replace the HTML body of a Custom HTML tag |
+| `add_firing_trigger_to_tags_batch` | Add a firing trigger to multiple tags |
+| `add_blocking_trigger_to_tags_batch` | Add a blocking (exception) trigger to multiple tags |
 
 ### Deleting
 
@@ -166,7 +168,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 | `tags.list` | Yes | `list_gtm_tags` |
 | `tags.get` | Yes | `get_gtm_tag` |
 | `tags.create` | Yes | `create_tag` |
-| `tags.update` | Yes | `update_tag_consent_settings`, `update_tags_consent_settings_batch`, `add_firing_trigger_to_tags_batch` |
+| `tags.update` | Yes | `update_tag_consent_settings`, `update_tags_consent_settings_batch`, `update_tag_html`, `add_firing_trigger_to_tags_batch`, `add_blocking_trigger_to_tags_batch` |
 | `tags.delete` | No | — |
 | `tags.revert` | No | — |
 

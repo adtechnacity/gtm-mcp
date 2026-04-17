@@ -14,7 +14,7 @@ from fastmcp_gtm_helpers import (
     _create_datalayer_var,
     _validate_consent_params, _build_consent_settings,
     _validate_ids, _resolve_workspace_parent,
-    _batch_update_tags,
+    _batch_update_tags, _append_trigger_to_tags_batch,
 )
 
 
@@ -268,13 +268,36 @@ async def create_datalayer_variables_batch(account_id: str, container_id: str, v
 # Triggers
 # ---------------------------------------------------------------------------
 
+def _validate_trigger_filters(filters):
+    """Validate user-provided trigger filter conditions.
+
+    Each item must be a dict with string ``type`` and list ``parameter``,
+    where each parameter is a dict with ``key``, ``value``, and ``type``.
+    Returns an error message string, or None if valid.
+    """
+    if not isinstance(filters, list):
+        return "filters must be a list of condition dicts"
+    for i, cond in enumerate(filters):
+        if not isinstance(cond, dict):
+            return f"filters[{i}] must be a dict"
+        if not isinstance(cond.get("type"), str) or not cond["type"]:
+            return f"filters[{i}].type must be a non-empty string"
+        params = cond.get("parameter")
+        if not isinstance(params, list) or not params:
+            return f"filters[{i}].parameter must be a non-empty list"
+        for j, p in enumerate(params):
+            if not isinstance(p, dict) or not all(isinstance(p.get(k), str) for k in ("key", "value", "type")):
+                return f"filters[{i}].parameter[{j}] must be a dict with string key/value/type"
+    return None
+
+
 @mcp.tool()
 async def create_trigger(
     account_id: str,
     container_id: str,
     trigger_name: str,
     event_name: str,
-    filters: list = None,
+    filters: list[dict] | None = None,
     workspace_id: str = "1"
 ) -> dict:
     """Create a custom event trigger in a GTM workspace.
@@ -306,6 +329,10 @@ async def create_trigger(
         error = _validate_ids(account_id=account_id, container_id=container_id)
         if error:
             return {"status": "error", "message": error}
+        if filters is not None:
+            filter_error = _validate_trigger_filters(filters)
+            if filter_error:
+                return {"status": "error", "message": filter_error}
 
         client = get_gtm_client()
         workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
@@ -564,17 +591,12 @@ async def add_firing_trigger_to_tags_batch(
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
-        workspace_id, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        _, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
-        def append_trigger(tag):
-            existing = tag.get('firingTriggerId', [])
-            if trigger_id in existing:
-                return None
-            tag['firingTriggerId'] = existing + [trigger_id]
-            return tag
-        return await _batch_update_tags(
-            client, prefix, tag_ids, append_trigger,
-            extra_fields_fn=lambda t: {"firing_triggers": t.get("firingTriggerId", [])},
+        return await _append_trigger_to_tags_batch(
+            client, prefix, tag_ids, trigger_id,
+            field="firingTriggerId",
+            label="firing_triggers",
             skip_reason="Trigger already attached",
         )
     except Exception as e:
@@ -615,17 +637,12 @@ async def add_blocking_trigger_to_tags_batch(
             return {"status": "error", "message": error}
 
         client = get_gtm_client()
-        workspace_id, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        _, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
-        def append_blocking(tag):
-            existing = tag.get('blockingTriggerId', [])
-            if trigger_id in existing:
-                return None
-            tag['blockingTriggerId'] = existing + [trigger_id]
-            return tag
-        return await _batch_update_tags(
-            client, prefix, tag_ids, append_blocking,
-            extra_fields_fn=lambda t: {"blocking_triggers": t.get("blockingTriggerId", [])},
+        return await _append_trigger_to_tags_batch(
+            client, prefix, tag_ids, trigger_id,
+            field="blockingTriggerId",
+            label="blocking_triggers",
             skip_reason="Blocking trigger already attached",
         )
     except Exception as e:

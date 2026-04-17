@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.2.0] - 2026-04-17
+
+### Added
+- `update_tag_html` tool — replace the HTML body of a Custom HTML tag (guards on `type == "html"`, uses fingerprint concurrency)
+- `add_blocking_trigger_to_tags_batch` tool — attach a blocking (exception) trigger to multiple tags
+- `create_trigger` now accepts an optional `filters` list — additional GTM Condition dicts AND-ed with the custom-event match (maps to the trigger body's `filter` field)
+
+### Changed
+- `create_trigger` validates filter shape client-side (each entry must be `{type: str, parameter: [{key, value, type}, ...]}`)
+- `add_firing_trigger_to_tags_batch` and `add_blocking_trigger_to_tags_batch` share a `_append_trigger_to_tags_batch` helper
+
+### Fixed
+- Data Layer Variable creation now sends `dataLayerVersion` as `integer` and `setDefaultValue` as `boolean`, matching the GTM Parameter schema (previously sent as `template`, which GTM tolerated but misrepresented)
+
 ## [0.1.1] - 2026-03-04
 
 ### Fixed

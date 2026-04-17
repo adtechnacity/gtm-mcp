@@ -239,3 +239,20 @@ async def _batch_update_tags(client, path_prefix, tag_ids, mutate_fn,
     results["status"] = "error" if n_failed and not n_updated else "partial" if n_failed else "success"
     results["summary"] = f"Updated {n_updated}/{len(tag_ids)} tags, skipped {n_skipped}, failed {n_failed}"
     return results
+
+
+async def _append_trigger_to_tags_batch(
+    client, path_prefix, tag_ids, trigger_id, *, field, label, skip_reason
+):
+    """Append a trigger ID to either ``firingTriggerId`` or ``blockingTriggerId`` across tags."""
+    def append(tag):
+        existing = tag.get(field, [])
+        if trigger_id in existing:
+            return None
+        tag[field] = existing + [trigger_id]
+        return tag
+    return await _batch_update_tags(
+        client, path_prefix, tag_ids, append,
+        extra_fields_fn=lambda t: {label: t.get(field, [])},
+        skip_reason=skip_reason,
+    )

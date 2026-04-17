@@ -100,7 +100,7 @@ Or using the installed entry point:
 }
 ```
 
-## Available Tools (18)
+## Available Tools (20)
 
 ### Discovery
 - `test_gtm_connection` — Verify service account credentials
@@ -116,14 +116,16 @@ Or using the installed entry point:
 
 ### Creating
 - `create_tag` — Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.)
-- `create_trigger` — Create a custom event trigger
+- `create_trigger` — Create a custom event trigger (optional `filters` for extra AND conditions)
 - `create_datalayer_variable` — Create a single Data Layer Variable
 - `create_datalayer_variables_batch` — Create multiple Data Layer Variables
 
 ### Modifying
 - `update_tag_consent_settings` — Set consent config for one tag
 - `update_tags_consent_settings_batch` — Set consent config for multiple tags
-- `add_firing_trigger_to_tags_batch` — Add a trigger to multiple tags
+- `update_tag_html` — Replace the HTML body of a Custom HTML tag
+- `add_firing_trigger_to_tags_batch` — Add a firing trigger to multiple tags
+- `add_blocking_trigger_to_tags_batch` — Add a blocking (exception) trigger to multiple tags
 
 ### Deleting
 - `delete_gtm_variable` — Delete a variable from workspace
