@@ -35,7 +35,11 @@ def get_gtm_client():
             logger.info("GTM client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize GTM client: {e}")
-            raise Exception(f"GTM authentication failed: {e}. Please ensure GOOGLE_APPLICATION_CREDENTIALS is set.")
+            raise Exception(
+                f"GTM authentication failed: {e}. Set one of:\n"
+                "  - GOOGLE_APPLICATION_CREDENTIALS: path to service account JSON key\n"
+                "  - GOOGLE_OAUTH_CLIENT_SECRET: path to OAuth client secret JSON"
+            )
     return gtm_client
 
 
