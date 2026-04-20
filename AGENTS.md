@@ -337,8 +337,8 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 ## Priority for Future Implementation
 
 ### High — Complete CRUD on core resources
-- `tags.delete`, `tags.revert`
-- `triggers.get`, `triggers.update`, `triggers.delete`
+- `tags.revert`
+- `triggers.get`, `triggers.update`, `triggers.revert`
 - `variables.get`, `variables.update`
 - `workspaces.create`, `workspaces.get`
 
