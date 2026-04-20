@@ -132,6 +132,7 @@ Or using the installed entry point:
 - `remove_blocking_trigger_from_tags_batch` — Detach a specific blocking trigger from multiple tags
 
 ### Deleting
+- `delete_tag` — Delete a tag from workspace
 - `delete_gtm_variable` — Delete a variable from workspace
 - `delete_trigger` — Delete a trigger from workspace (detach from tags first to avoid dangling references)
 

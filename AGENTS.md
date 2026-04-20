@@ -88,6 +88,7 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 
 | Tool | Description |
 |------|-------------|
+| `delete_tag` | Delete a tag from workspace |
 | `delete_gtm_variable` | Delete a variable from workspace |
 | `delete_trigger` | Delete a trigger from workspace |
 
@@ -191,7 +192,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 | `tags.get` | Yes | `get_gtm_tag` |
 | `tags.create` | Yes | `create_tag` |
 | `tags.update` | Yes | `update_tag_consent_settings`, `update_tags_consent_settings_batch`, `update_tag_html`, `add_firing_trigger_to_tags_batch`, `add_blocking_trigger_to_tags_batch`, `set_firing_triggers_on_tags_batch`, `remove_firing_trigger_from_tags_batch`, `remove_blocking_trigger_from_tags_batch` |
-| `tags.delete` | No | — |
+| `tags.delete` | Yes | `delete_tag` |
 | `tags.revert` | No | — |
 
 ### accounts.containers.workspaces.triggers

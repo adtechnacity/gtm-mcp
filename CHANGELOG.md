@@ -1,5 +1,10 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `delete_tag` tool — delete a tag from a workspace (tagmanager.accounts.containers.workspaces.tags.delete)
+
 ## [0.2.0] - 2026-04-17
 
 ### Added
