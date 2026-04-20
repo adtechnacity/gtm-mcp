@@ -1,10 +1,10 @@
 """
 Write MCP tools for Google Tag Manager.
 
-Registers 15 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
+Registers 16 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
 create_tag, create_trigger, create_datalayer_variable, create_datalayer_variables_batch,
 create_js_variable, publish_gtm_container, update_tag_consent_settings,
-update_tags_consent_settings_batch, update_tag_html, delete_trigger,
+update_tags_consent_settings_batch, update_tag_html, delete_tag, delete_trigger,
 add_firing_trigger_to_tags_batch, add_blocking_trigger_to_tags_batch,
 set_firing_triggers_on_tags_batch, remove_firing_trigger_from_tags_batch,
 remove_blocking_trigger_from_tags_batch.
@@ -477,6 +477,52 @@ async def create_trigger(
         return {
             "status": "error",
             "message": f"Failed to create trigger: {str(e)}"
+        }
+
+
+# ---------------------------------------------------------------------------
+# Tag deletion
+# ---------------------------------------------------------------------------
+
+@mcp.tool()
+async def delete_tag(
+    account_id: str,
+    container_id: str,
+    tag_id: str,
+    workspace_id: str = "1"
+) -> dict:
+    """Delete a tag from a GTM workspace.
+
+    Calls tagmanager.accounts.containers.workspaces.tags.delete. Permanent
+    within the workspace — publish to make it live, or discard workspace
+    changes to undo.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_id: The tag ID to delete
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        path = f"{parent}/tags/{tag_id}"
+
+        await _run(client.service.accounts().containers().workspaces().tags().delete(path=path))
+
+        return {
+            "status": "success",
+            "message": f"Tag '{tag_id}' deleted",
+            "tag_id": tag_id,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to delete tag: {str(e)}"
         }
 
 

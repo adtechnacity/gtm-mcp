@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.2.1] - 2026-04-20
+
+### Added
+- `delete_tag` tool — delete a tag from a workspace (tagmanager.accounts.containers.workspaces.tags.delete)
+
+### Changed
+- AGENTS.md capability matrix marks `tags.delete` as implemented; stale `tags.delete` / `triggers.delete` entries removed from the Future Implementation priority list
+
 ## [0.2.0] - 2026-04-17
 
 ### Added
