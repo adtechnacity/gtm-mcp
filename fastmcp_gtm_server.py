@@ -18,7 +18,9 @@ Run directly:
 Or via entry point:
     mcp-gtm-server
 """
+import argparse
 import asyncio
+import os
 
 from fastmcp_gtm_helpers import (
     mcp, get_gtm_client, _run, logger,
@@ -447,10 +449,55 @@ async def generate_ga4_template(measurement_id: str, config_parameters: dict = N
 # Entry point
 # ---------------------------------------------------------------------------
 
+VALID_TRANSPORTS = ("stdio", "sse", "streamable-http")
+
+
+def _resolve_transport():
+    """Resolve transport, host, port.
+
+    Precedence: CLI flag > env var > default. Default is stdio, matching
+    the behavior expected by Claude Desktop, `mcp-gtm-server`,
+    `uv run python fastmcp_gtm_server.py`, and `./run_server.sh`.
+    """
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--transport", choices=VALID_TRANSPORTS, default=None)
+    parser.add_argument("--host", default=None)
+    parser.add_argument("--port", type=int, default=None)
+    args, _ = parser.parse_known_args()
+
+    transport = args.transport or os.getenv("MCP_TRANSPORT", "stdio")
+    if transport not in VALID_TRANSPORTS:
+        logger.warning(
+            "Invalid MCP_TRANSPORT=%r; falling back to stdio. Valid: %s",
+            transport, VALID_TRANSPORTS,
+        )
+        transport = "stdio"
+
+    host = args.host or os.getenv("HOST", "127.0.0.1")
+    port = args.port or int(os.getenv("PORT", "8000"))
+    return transport, host, port
+
+
 def main():
-    """Entry point for the MCP GTM server."""
-    logger.info("Starting FastMCP GTM Server...")
-    mcp.run()
+    """Entry point for the MCP GTM server.
+
+    Default transport is stdio — no env vars needed. To run over HTTP
+    (e.g. for ContextForge or any hosted gateway), set
+    MCP_TRANSPORT=streamable-http and optionally HOST/PORT.
+    """
+    transport, host, port = _resolve_transport()
+
+    if transport == "stdio":
+        logger.info("Starting FastMCP GTM Server (stdio)...")
+        mcp.run()
+        return
+
+    mcp.settings.host = host
+    mcp.settings.port = port
+    logger.info(
+        "Starting FastMCP GTM Server (%s) on %s:%d...", transport, host, port
+    )
+    mcp.run(transport=transport)
 
 
 if __name__ == '__main__':
