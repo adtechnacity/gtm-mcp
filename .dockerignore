@@ -15,10 +15,8 @@ build
 .idea
 .claude
 .mcp.json
-README.md
 CHANGELOG.md
 AGENTS.md
-LICENSE
 test_*.py
 tests/
 *-key.json

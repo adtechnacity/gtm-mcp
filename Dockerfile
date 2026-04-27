@@ -6,10 +6,11 @@ WORKDIR /app
 COPY pyproject.toml requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copy source and install the package itself (registers `mcp-gtm-server`).
+# Copy source. We invoke the server via `python fastmcp_gtm_server.py`
+# directly (entrypoint.sh), so no need to `pip install .` — keeps the
+# image smaller and avoids hatchling's pyproject.toml validation.
 COPY . .
-RUN pip install --no-cache-dir --no-deps . \
-    && chmod +x /app/entrypoint.sh
+RUN chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
 
