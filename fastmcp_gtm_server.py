@@ -494,6 +494,35 @@ def main():
 
     mcp.settings.host = host
     mcp.settings.port = port
+
+    # The MCP SDK's DNS-rebinding protection rejects any Host header that
+    # isn't localhost/127.0.0.1 with "Invalid Host header". That breaks
+    # containerized deployments where a gateway reaches us via private DNS
+    # (e.g. gtm-mcp.contextforge.internal). MCP_ALLOWED_HOSTS lets the
+    # operator pin specific hostnames; if unset, we disable rebinding
+    # protection — safe when the listener is only reachable on a private
+    # network (security group, VPC, etc.).
+    from mcp.server.transport_security import TransportSecuritySettings
+    allowed_hosts = [
+        h.strip()
+        for h in os.getenv("MCP_ALLOWED_HOSTS", "").split(",")
+        if h.strip()
+    ]
+    allowed_origins = [
+        o.strip()
+        for o in os.getenv("MCP_ALLOWED_ORIGINS", "").split(",")
+        if o.strip()
+    ]
+    if allowed_hosts:
+        mcp.settings.transport_security = TransportSecuritySettings(
+            allowed_hosts=allowed_hosts,
+            allowed_origins=allowed_origins,
+        )
+    else:
+        mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False,
+        )
+
     logger.info(
         "Starting FastMCP GTM Server (%s) on %s:%d...", transport, host, port
     )
