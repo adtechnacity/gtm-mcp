@@ -1,4 +1,7 @@
-FROM python:3.12-slim
+# Pulled from the AWS-hosted public ECR mirror of Docker Hub library images
+# to avoid Docker Hub's anonymous rate limit on shared CodeBuild egress IPs.
+# The image is byte-identical to docker.io/library/python:3.12-slim.
+FROM public.ecr.aws/docker/library/python:3.12-slim
 
 WORKDIR /app
 
