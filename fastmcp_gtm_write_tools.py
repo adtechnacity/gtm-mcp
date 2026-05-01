@@ -1,13 +1,13 @@
 """
 Write MCP tools for Google Tag Manager.
 
-Registers 16 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
+Registers 17 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
 create_tag, create_trigger, create_datalayer_variable, create_datalayer_variables_batch,
 create_js_variable, publish_gtm_container, update_tag_consent_settings,
-update_tags_consent_settings_batch, update_tag_html, delete_tag, delete_trigger,
-add_firing_trigger_to_tags_batch, add_blocking_trigger_to_tags_batch,
-set_firing_triggers_on_tags_batch, remove_firing_trigger_from_tags_batch,
-remove_blocking_trigger_from_tags_batch.
+update_tags_consent_settings_batch, update_tag_html, update_tag_parameters,
+delete_tag, delete_trigger, add_firing_trigger_to_tags_batch,
+add_blocking_trigger_to_tags_batch, set_firing_triggers_on_tags_batch,
+remove_firing_trigger_from_tags_batch, remove_blocking_trigger_from_tags_batch.
 """
 import asyncio
 
@@ -21,6 +21,7 @@ from fastmcp_gtm_helpers import (
     _append_trigger_to_tags_batch,
     _remove_trigger_from_tags_batch,
     _set_triggers_on_tags_batch,
+    _upsert_parameters,
 )
 
 
@@ -757,6 +758,77 @@ async def update_tag_html(
         return {
             "status": "error",
             "message": f"Failed to update tag HTML: {str(e)}",
+        }
+
+
+@mcp.tool()
+async def update_tag_parameters(
+    account_id: str,
+    container_id: str,
+    tag_id: str,
+    parameters: list,
+    workspace_id: str = "1",
+) -> dict:
+    """Upsert raw GTM parameter dicts on any tag, by ``key``.
+
+    For each item in ``parameters``, replaces the existing parameter with the
+    same ``key`` on the tag, or appends it if absent. Other parameters are
+    left unchanged. Saves with fingerprint-based optimistic concurrency.
+
+    Each item must be a complete GTM parameter dict matching the API schema:
+    ``{"key": str, "type": "template"|"boolean"|"integer"|"list"|"map", ...}``
+    with ``value`` for template/boolean/integer, ``list`` for list, or ``map``
+    for map. Inspect the tag with ``get_gtm_tag`` first to learn the shape.
+
+    GA4 event tag (type ``gaawe``) recipe — add/overwrite event parameters:
+        1. ``get_gtm_tag`` to read existing ``eventParameters``
+        2. Build the merged list-of-maps locally
+        3. Call this tool with that single ``eventParameters`` entry
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_id: The tag ID to update
+        parameters: List of GTM parameter dicts to upsert by ``key``
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
+        if error:
+            return {"status": "error", "message": error}
+        if not parameters:
+            return {"status": "error", "message": "parameters must be a non-empty list."}
+
+        client = get_gtm_client()
+        _, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        path = f"{ws_parent}/tags/{tag_id}"
+
+        tag = await _run(client.service.accounts().containers().workspaces().tags().get(path=path))
+
+        try:
+            tag["parameter"] = _upsert_parameters(tag.get("parameter", []), parameters)
+        except ValueError as ve:
+            return {"status": "error", "message": str(ve)}
+
+        updated = await _run(
+            client.service.accounts().containers().workspaces().tags().update(
+                path=path, body=tag, fingerprint=tag.get("fingerprint")
+            )
+        )
+
+        upserted_keys = [p["key"] for p in parameters]
+        return {
+            "status": "success",
+            "message": f"Upserted {len(upserted_keys)} parameter(s) on tag '{updated.get('name')}'",
+            "tag_id": tag_id,
+            "tag_name": updated.get("name"),
+            "tag_type": updated.get("type"),
+            "upserted_keys": upserted_keys,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to update tag parameters: {str(e)}",
         }
 
 

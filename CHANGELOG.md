@@ -1,5 +1,11 @@
 # Changelog
 
+## [0.3.0] - 2026-05-01
+
+### Added
+- `update_tag_parameters` tool — upsert raw GTM `parameter` dicts on any tag by `key`, leaving other parameters untouched. Works on every tag type (GA4 event/`gaawe`, GA4 config/`gtagjs`, conversion/`awct`, etc.) and unblocks edits like adding `eventParameters`, `userProperties`, or `measurementIdOverride` without recreating the tag. Uses fingerprint concurrency.
+- `_upsert_parameters` helper in `fastmcp_gtm_helpers` — pure function with input validation (missing key/type, duplicate keys) and non-mutating semantics (deep-copies inserted items so the returned list is independent of caller refs); covered by 13 unit tests.
+
 ## [0.2.1] - 2026-04-20
 
 ### Added
