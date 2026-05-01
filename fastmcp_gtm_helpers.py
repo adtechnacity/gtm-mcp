@@ -5,6 +5,7 @@ Creates the FastMCP server, GTM client, and internal helpers used by both
 read and write tool modules. Import from here — never instantiate separately.
 """
 import asyncio
+import copy
 import logging
 import sys
 
@@ -173,6 +174,45 @@ def _build_consent_settings(consent_status, consent_types):
             "list": [{"type": "template", "value": ct} for ct in consent_types],
         }
     return settings
+
+
+def _upsert_parameters(existing, updates):
+    """Upsert GTM parameter dicts into ``existing`` by their ``key`` field.
+
+    For each item in ``updates``, replaces the parameter sharing the same ``key``
+    in ``existing`` or appends it. Returns a new list; inputs are not mutated.
+    Raises ValueError on missing ``key``/``type`` or duplicate keys in updates.
+
+    The caller is responsible for the inner shape of each update dict — value
+    fields must match the GTM parameter ``type`` (``value`` for template/boolean/
+    integer, ``list`` for list, ``map`` for map).
+    """
+    if not isinstance(updates, list):
+        raise ValueError("updates must be a list of parameter dicts.")
+    seen_keys = set()
+    for u in updates:
+        if not isinstance(u, dict):
+            raise ValueError(f"Each update must be a dict, got {type(u).__name__}.")
+        key = u.get("key")
+        if not key or not isinstance(key, str):
+            raise ValueError("Each update must have a non-empty string 'key'.")
+        if not u.get("type"):
+            raise ValueError(f"Update for key '{key}' is missing 'type'.")
+        if key in seen_keys:
+            raise ValueError(f"Duplicate key '{key}' in updates.")
+        seen_keys.add(key)
+
+    by_key = {p.get("key"): i for i, p in enumerate(existing or [])}
+    result = list(existing or [])
+    for u in updates:
+        item = copy.deepcopy(u)
+        idx = by_key.get(item["key"])
+        if idx is None:
+            by_key[item["key"]] = len(result)
+            result.append(item)
+        else:
+            result[idx] = item
+    return result
 
 
 async def _create_datalayer_var(client, parent, name, key):

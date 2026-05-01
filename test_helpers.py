@@ -6,6 +6,7 @@ from fastmcp_gtm_helpers import (
     _validate_ids,
     _validate_consent_params,
     _build_consent_settings,
+    _upsert_parameters,
     MAX_BATCH_SIZE,
 )
 
@@ -119,6 +120,110 @@ class TestBuildConsentSettings:
     def test_needed_without_types_no_consent_type_key(self):
         result = _build_consent_settings("needed", None)
         assert "consentType" not in result
+
+
+# ---------------------------------------------------------------------------
+# _upsert_parameters
+# ---------------------------------------------------------------------------
+
+class TestUpsertParameters:
+    def test_appends_when_key_absent(self):
+        existing = [{"key": "eventName", "type": "template", "value": "purchase"}]
+        updates = [{"key": "measurementIdOverride", "type": "template", "value": "G-ABC"}]
+        result = _upsert_parameters(existing, updates)
+        assert len(result) == 2
+        assert result[0] == existing[0]
+        assert result[1] == updates[0]
+
+    def test_replaces_when_key_present(self):
+        existing = [{"key": "eventName", "type": "template", "value": "purchase"}]
+        updates = [{"key": "eventName", "type": "template", "value": "refund"}]
+        result = _upsert_parameters(existing, updates)
+        assert result == [{"key": "eventName", "type": "template", "value": "refund"}]
+
+    def test_mixed_replace_and_append_preserves_order(self):
+        existing = [
+            {"key": "eventName", "type": "template", "value": "purchase"},
+            {"key": "sendEcommerceData", "type": "boolean", "value": "false"},
+        ]
+        updates = [
+            {"key": "sendEcommerceData", "type": "boolean", "value": "true"},
+            {"key": "measurementIdOverride", "type": "template", "value": "G-NEW"},
+        ]
+        result = _upsert_parameters(existing, updates)
+        assert [p["key"] for p in result] == ["eventName", "sendEcommerceData", "measurementIdOverride"]
+        assert result[1]["value"] == "true"
+
+    def test_handles_empty_existing(self):
+        updates = [{"key": "eventName", "type": "template", "value": "purchase"}]
+        assert _upsert_parameters([], updates) == updates
+        assert _upsert_parameters(None, updates) == updates
+
+    def test_does_not_mutate_inputs(self):
+        existing = [{"key": "eventName", "type": "template", "value": "purchase"}]
+        updates = [{"key": "eventName", "type": "template", "value": "refund"}]
+        existing_copy = [dict(p) for p in existing]
+        updates_copy = [dict(p) for p in updates]
+        _upsert_parameters(existing, updates)
+        assert existing == existing_copy
+        assert updates == updates_copy
+
+    def test_result_does_not_alias_updates(self):
+        nested_update = {
+            "key": "eventParameters",
+            "type": "list",
+            "list": [{"type": "map", "map": [
+                {"key": "name", "type": "template", "value": "item_id"},
+            ]}],
+        }
+        result = _upsert_parameters([], [nested_update])
+        result[0]["list"][0]["map"][0]["value"] = "MUTATED"
+        assert nested_update["list"][0]["map"][0]["value"] == "item_id"
+
+    def test_supports_list_typed_parameter(self):
+        event_params = {
+            "key": "eventParameters",
+            "type": "list",
+            "list": [
+                {"type": "map", "map": [
+                    {"key": "name", "type": "template", "value": "item_id"},
+                    {"key": "value", "type": "template", "value": "sku-1"},
+                ]},
+            ],
+        }
+        result = _upsert_parameters([], [event_params])
+        assert result == [event_params]
+
+    def test_rejects_non_list_updates(self):
+        with pytest.raises(ValueError, match="must be a list"):
+            _upsert_parameters([], {"key": "x", "type": "template"})
+
+    def test_rejects_non_dict_update(self):
+        with pytest.raises(ValueError, match="must be a dict"):
+            _upsert_parameters([], ["not a dict"])
+
+    def test_rejects_missing_key(self):
+        with pytest.raises(ValueError, match="non-empty string 'key'"):
+            _upsert_parameters([], [{"type": "template", "value": "x"}])
+
+    def test_rejects_empty_key(self):
+        with pytest.raises(ValueError, match="non-empty string 'key'"):
+            _upsert_parameters([], [{"key": "", "type": "template"}])
+
+    def test_rejects_non_string_key(self):
+        with pytest.raises(ValueError, match="non-empty string 'key'"):
+            _upsert_parameters([], [{"key": 123, "type": "template"}])
+
+    def test_rejects_missing_type(self):
+        with pytest.raises(ValueError, match="missing 'type'"):
+            _upsert_parameters([], [{"key": "eventName", "value": "x"}])
+
+    def test_rejects_duplicate_keys_in_updates(self):
+        with pytest.raises(ValueError, match="Duplicate key 'eventName'"):
+            _upsert_parameters([], [
+                {"key": "eventName", "type": "template", "value": "a"},
+                {"key": "eventName", "type": "template", "value": "b"},
+            ])
 
 
 # ---------------------------------------------------------------------------

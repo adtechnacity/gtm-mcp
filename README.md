@@ -100,7 +100,7 @@ Or using the installed entry point:
 }
 ```
 
-## Available Tools (25)
+## Available Tools (26)
 
 ### Discovery
 - `test_gtm_connection` — Verify service account credentials
@@ -125,6 +125,7 @@ Or using the installed entry point:
 - `update_tag_consent_settings` — Set consent config for one tag
 - `update_tags_consent_settings_batch` — Set consent config for multiple tags
 - `update_tag_html` — Replace the HTML body of a Custom HTML tag
+- `update_tag_parameters` — Upsert raw GTM `parameter` dicts on any tag by `key` (e.g. add `eventParameters` to a GA4 event tag without recreating it). See [Updating tag parameters](#updating-tag-parameters) below.
 - `add_firing_trigger_to_tags_batch` — Append a firing trigger to multiple tags
 - `add_blocking_trigger_to_tags_batch` — Append a blocking (exception) trigger to multiple tags
 - `set_firing_triggers_on_tags_batch` — Replace the firing-trigger list on multiple tags (useful for migrating between triggers)
@@ -141,6 +142,35 @@ Or using the installed entry point:
 
 ### Templates (Local Only)
 - `generate_ga4_template` — Generate GA4 tag JSON without API calls
+
+### Updating tag parameters
+
+`update_tag_parameters` is the generic edit path for any tag's `parameter` array. Each item must be a complete GTM parameter dict — same shape `get_gtm_tag` returns. Items are upserted by their `key` field; everything else on the tag is left alone.
+
+**Add or change `eventParameters` on a GA4 event tag (`gaawe`) without recreating it:**
+
+1. Read the tag with `get_gtm_tag` to see the current `eventParameters` (a `list`-typed parameter whose `list` is a sequence of `map` items, each with inner `name`/`value` keys).
+2. Build the merged list locally (append a new map for each new parameter, replace inner maps to overwrite).
+3. Call `update_tag_parameters` with one entry whose `key` is `eventParameters` and whose `list` is the merged sequence:
+
+```json
+{
+  "key": "eventParameters",
+  "type": "list",
+  "list": [
+    {"type": "map", "map": [
+      {"key": "name",  "type": "template", "value": "item_id"},
+      {"key": "value", "type": "template", "value": "{{DLV - item_id}}"}
+    ]},
+    {"type": "map", "map": [
+      {"key": "name",  "type": "template", "value": "currency"},
+      {"key": "value", "type": "template", "value": "USD"}
+    ]}
+  ]
+}
+```
+
+The whole `eventParameters` list is replaced atomically — read-then-merge locally rather than calling the tool twice. Other top-level params (`eventName`, `measurementIdOverride`, `userProperties`, etc.) are untouched.
 
 ## CLI Tool
 
