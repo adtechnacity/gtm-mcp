@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+- `pause_tag` and `unpause_tag` tools — toggle a tag's `paused` flag via `tags.update`, preserving every other field (uses fingerprint for optimistic concurrency). Returns `status="noop"` if the tag is already in the requested state.
+- `get_gtm_variable` tool — full variable resource via `variables.get`, including the JS source for JS Macro (`jsm`) variables.
+
 ## [0.1.1] - 2026-03-04
 
 ### Fixed

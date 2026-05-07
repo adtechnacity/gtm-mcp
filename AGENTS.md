@@ -6,8 +6,8 @@ Five Python files:
 
 | File | Role |
 |------|------|
-| `fastmcp_gtm_server.py` | MCP server entry point — 10 read/query tools + `main()` |
-| `fastmcp_gtm_write_tools.py` | 8 write tools (imported by server on startup) |
+| `fastmcp_gtm_server.py` | MCP server entry point — 11 read/query tools + `main()` |
+| `fastmcp_gtm_write_tools.py` | 10 write tools (imported by server on startup) |
 | `fastmcp_gtm_helpers.py` | Shared `mcp` instance, GTM client, validation, pagination, batch helpers |
 | `gtm_client_fixed.py` | GTM API client — service account auth, wraps `google-api-python-client` |
 | `gtm_components.py` | Local template builders — no API calls, produce JSON dicts for tags/triggers/variables |
@@ -41,7 +41,7 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 3. Requests scopes: `tagmanager.readonly`, `tagmanager.edit.containers`, `tagmanager.publish`
 4. Builds the `tagmanager` v2 service — no browser, no token file, fully headless
 
-## Implemented Tools (18)
+## Implemented Tools (21)
 
 ### Discovery
 
@@ -60,6 +60,7 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 | `list_gtm_triggers` | List all triggers with filters |
 | `list_gtm_variables` | List all variables |
 | `get_gtm_tag` | Get full tag details by ID |
+| `get_gtm_variable` | Get full variable details by ID (incl. JS source for `jsm`) |
 
 ### Creating
 
@@ -77,6 +78,8 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 | `update_tag_consent_settings` | Set consent config for one tag |
 | `update_tags_consent_settings_batch` | Set consent config for multiple tags |
 | `add_firing_trigger_to_tags_batch` | Add a trigger to multiple tags |
+| `pause_tag` | Pause a tag so it stops firing (reversible, no-op if already paused) |
+| `unpause_tag` | Unpause a previously paused tag |
 
 ### Deleting
 
@@ -120,7 +123,7 @@ create_tag / create_trigger / create_datalayer_variable → publish_gtm_containe
 
 ## GTM API v2 — Full Endpoint Reference
 
-The GTM API v2 has 18 resource families with ~105 methods total. This server currently implements 14 unique API methods. The table below shows implementation status.
+The GTM API v2 has 18 resource families with ~105 methods total. This server currently implements 15 unique API methods. The table below shows implementation status.
 
 ### accounts
 
@@ -166,7 +169,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 | `tags.list` | Yes | `list_gtm_tags` |
 | `tags.get` | Yes | `get_gtm_tag` |
 | `tags.create` | Yes | `create_tag` |
-| `tags.update` | Yes | `update_tag_consent_settings`, `update_tags_consent_settings_batch`, `add_firing_trigger_to_tags_batch` |
+| `tags.update` | Yes | `update_tag_consent_settings`, `update_tags_consent_settings_batch`, `add_firing_trigger_to_tags_batch`, `pause_tag`, `unpause_tag` |
 | `tags.delete` | No | — |
 | `tags.revert` | No | — |
 
@@ -186,7 +189,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 | Method | Implemented | Tool |
 |--------|-------------|------|
 | `variables.list` | Yes | `list_gtm_variables` |
-| `variables.get` | No | — |
+| `variables.get` | Yes | `get_gtm_variable` |
 | `variables.create` | Yes | `create_datalayer_variable`, `create_datalayer_variables_batch` |
 | `variables.update` | No | — |
 | `variables.delete` | Yes | `delete_gtm_variable` |
@@ -314,7 +317,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 ### High — Complete CRUD on core resources
 - `tags.delete`, `tags.revert`
 - `triggers.get`, `triggers.update`, `triggers.delete`
-- `variables.get`, `variables.update`
+- `variables.update`
 - `workspaces.create`, `workspaces.get`
 
 ### Medium — Environments, versions, folders

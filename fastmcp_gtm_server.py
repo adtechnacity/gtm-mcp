@@ -325,6 +325,48 @@ async def get_gtm_tag(account_id: str, container_id: str, tag_id: str, workspace
 
 
 @mcp.tool()
+async def get_gtm_variable(
+    account_id: str,
+    container_id: str,
+    variable_id: str,
+    workspace_id: str = "1",
+) -> dict:
+    """Get full details of a specific GTM variable, including its parameters.
+
+    Calls tagmanager.accounts.containers.workspaces.variables.get.
+    For JS Macro (jsm) variables, the JavaScript source is in the parameter
+    list under key="javascript". For Data Layer Variables (v), the dataLayer
+    key is under key="name".
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        variable_id: The variable ID to retrieve
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(
+            account_id=account_id, container_id=container_id, variable_id=variable_id
+        )
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        workspace_id, ws_parent = await _resolve_workspace_parent(
+            client, account_id, container_id, workspace_id
+        )
+        path = f"{ws_parent}/variables/{variable_id}"
+
+        variable = await _run(
+            client.service.accounts().containers().workspaces().variables().get(path=path)
+        )
+
+        return {"status": "success", "variable": variable}
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to get variable: {str(e)}"}
+
+
+@mcp.tool()
 async def list_gtm_triggers(account_id: str, container_id: str, workspace_id: str = "1") -> dict:
     """List all triggers in a GTM workspace.
 

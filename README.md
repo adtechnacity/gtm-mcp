@@ -4,7 +4,7 @@ An MCP server that exposes Google Tag Manager API v2 as tools for AI agents like
 
 ## Features
 
-- **18 MCP tools** covering discovery, CRUD, consent management, batch operations, and publishing
+- **21 MCP tools** covering discovery, CRUD, consent management, pause/unpause, batch operations, and publishing
 - **Service account authentication** — headless, no browser flow, works in containers
 - **Template builder** for generating GTM component JSON locally
 - **Batch operations** for bulk consent updates and variable creation
@@ -100,7 +100,7 @@ Or using the installed entry point:
 }
 ```
 
-## Available Tools (18)
+## Available Tools (21)
 
 ### Discovery
 - `test_gtm_connection` — Verify service account credentials
@@ -113,6 +113,7 @@ Or using the installed entry point:
 - `list_gtm_triggers` — List all triggers with filters
 - `list_gtm_variables` — List all variables
 - `get_gtm_tag` — Get full tag details by ID
+- `get_gtm_variable` — Get full variable details by ID (incl. JS source for `jsm` variables)
 
 ### Creating
 - `create_tag` — Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.)
@@ -124,6 +125,8 @@ Or using the installed entry point:
 - `update_tag_consent_settings` — Set consent config for one tag
 - `update_tags_consent_settings_batch` — Set consent config for multiple tags
 - `add_firing_trigger_to_tags_batch` — Add a trigger to multiple tags
+- `pause_tag` — Pause a tag so it stops firing (reversible, no-op if already paused)
+- `unpause_tag` — Unpause a previously paused tag
 
 ### Deleting
 - `delete_gtm_variable` — Delete a variable from workspace
@@ -183,8 +186,8 @@ uv run python fastmcp_gtm_server.py
 
 ```
 gtm-mcp/
-├── fastmcp_gtm_server.py      # MCP server entry point — 10 read/query tools + main()
-├── fastmcp_gtm_write_tools.py # 8 write tools (imported by server)
+├── fastmcp_gtm_server.py      # MCP server entry point — 11 read/query tools + main()
+├── fastmcp_gtm_write_tools.py # 10 write tools (imported by server)
 ├── fastmcp_gtm_helpers.py     # Shared mcp instance, GTM client, internal helpers
 ├── gtm_client_fixed.py        # GTM API client with service account auth
 ├── gtm_components.py          # Template builder (no API calls)

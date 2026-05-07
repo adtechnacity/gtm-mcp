@@ -1,10 +1,10 @@
 """
 Write MCP tools for Google Tag Manager.
 
-Registers 8 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
+Registers 10 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
 create_tag, create_trigger, create_datalayer_variable, create_datalayer_variables_batch,
 publish_gtm_container, update_tag_consent_settings, update_tags_consent_settings_batch,
-add_firing_trigger_to_tags_batch.
+add_firing_trigger_to_tags_batch, pause_tag, unpause_tag.
 """
 import asyncio
 
@@ -16,6 +16,47 @@ from fastmcp_gtm_helpers import (
     _validate_ids, _resolve_workspace_parent,
     _batch_update_tags,
 )
+
+
+# ---------------------------------------------------------------------------
+# Pause / unpause shared helper
+# ---------------------------------------------------------------------------
+
+
+async def _set_tag_paused(client, ws_parent: str, tag_id: str, paused: bool) -> dict:
+    """Toggle a tag's `paused` flag, preserving every other field.
+
+    No-op (returns status="noop") if the tag is already in the requested state.
+    Uses fingerprint for optimistic concurrency on the update.
+    """
+    path = f"{ws_parent}/tags/{tag_id}"
+    tag = await _run(
+        client.service.accounts().containers().workspaces().tags().get(path=path)
+    )
+
+    current = bool(tag.get("paused", False))
+    if current == paused:
+        return {
+            "status": "noop",
+            "message": f"Tag '{tag.get('name')}' already {'paused' if paused else 'unpaused'}",
+            "tag_id": tag_id,
+            "tag_name": tag.get("name"),
+            "paused": current,
+        }
+
+    tag["paused"] = paused
+    updated = await _run(
+        client.service.accounts().containers().workspaces().tags().update(
+            path=path, body=tag, fingerprint=tag.get("fingerprint"),
+        )
+    )
+    return {
+        "status": "success",
+        "message": f"Tag '{updated.get('name')}' {'paused' if paused else 'unpaused'}",
+        "tag_id": tag_id,
+        "tag_name": updated.get("name"),
+        "paused": paused,
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -494,3 +535,72 @@ async def add_firing_trigger_to_tags_batch(
             "status": "error",
             "message": f"Failed to batch add firing trigger: {str(e)}"
         }
+
+
+# ---------------------------------------------------------------------------
+# Pause / unpause
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def pause_tag(
+    account_id: str,
+    container_id: str,
+    tag_id: str,
+    workspace_id: str = "1",
+) -> dict:
+    """Pause a GTM tag so it stops firing without deleting it.
+
+    Reversible: use unpause_tag to restore. Useful for safely deprecating
+    a tag — pause first, monitor downstream tracking for a few days, then
+    delete only if nothing breaks. Changes apply on the next container
+    publish; until publish, the live container is unaffected.
+
+    Returns status="noop" if the tag is already paused.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_id: The tag ID to pause
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        return await _set_tag_paused(client, ws_parent, tag_id, paused=True)
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to pause tag: {str(e)}"}
+
+
+@mcp.tool()
+async def unpause_tag(
+    account_id: str,
+    container_id: str,
+    tag_id: str,
+    workspace_id: str = "1",
+) -> dict:
+    """Unpause a previously paused GTM tag so it resumes firing.
+
+    Inverse of pause_tag. Returns status="noop" if the tag is already unpaused.
+    Changes apply on the next container publish.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_id: The tag ID to unpause
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        return await _set_tag_paused(client, ws_parent, tag_id, paused=False)
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to unpause tag: {str(e)}"}

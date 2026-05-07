@@ -42,3 +42,6 @@ Thumbs.db
 # Claude
 .claude/
 .mcp.json
+
+# Local investigation scripts (container/tag-specific, not part of the package)
+scripts/
