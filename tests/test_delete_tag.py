@@ -93,3 +93,41 @@ class TestDeleteTagPauseGuard:
         assert result["code"] == "not_paused"
         assert result["paused"] is False
         tags.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_force_true_deletes_unpaused_tag(self):
+        from fastmcp_gtm_write_tools import delete_tag
+
+        tag = {"name": "Live Tag", "tagId": "100",
+               "fingerprint": "fp1", "paused": False}
+        client, tags = _make_mock_client(tag)
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await delete_tag(
+                account_id="1", container_id="2", tag_id="100", force=True
+            )
+
+        assert result["status"] == "success"
+        assert result["tag_id"] == "100"
+        assert result["tag_name"] == "Live Tag"
+        tags.delete.assert_called_once()
+
+
+class TestDeleteTagValidation:
+    @pytest.mark.asyncio
+    async def test_invalid_account_id_returns_error(self):
+        from fastmcp_gtm_write_tools import delete_tag
+
+        result = await delete_tag(account_id="bad", container_id="2", tag_id="100")
+        assert result["status"] == "error"
+        assert "account_id" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_empty_tag_id_returns_error(self):
+        from fastmcp_gtm_write_tools import delete_tag
+
+        result = await delete_tag(account_id="1", container_id="2", tag_id="")
+        assert result["status"] == "error"
+        assert "tag_id" in result["message"]
