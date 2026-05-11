@@ -604,3 +604,61 @@ async def unpause_tag(
         return await _set_tag_paused(client, ws_parent, tag_id, paused=False)
     except Exception as e:
         return {"status": "error", "message": f"Failed to unpause tag: {str(e)}"}
+
+
+# ---------------------------------------------------------------------------
+# Delete
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def delete_tag(
+    account_id: str,
+    container_id: str,
+    tag_id: str,
+    workspace_id: str = "1",
+    force: bool = False,
+) -> dict:
+    """Delete a GTM tag from a workspace.
+
+    Permanent within the workspace — takes effect at the next
+    `publish_gtm_container`. Unpublished workspace deletes can be undone by
+    discarding workspace changes in the GTM UI.
+
+    Refuses to delete tags that are not paused unless `force=True`. The
+    pause-first workflow exists so the paused-but-still-in-workspace state
+    can be monitored for downstream impact before deletion makes it
+    irreversible.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_id: The tag ID to delete
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+        force: If True, delete even when the tag is not paused. Default False.
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        path = f"{ws_parent}/tags/{tag_id}"
+
+        tag = await _run(
+            client.service.accounts().containers().workspaces().tags().get(path=path)
+        )
+        name = tag.get("name")
+
+        await _run(
+            client.service.accounts().containers().workspaces().tags().delete(path=path)
+        )
+        return {
+            "status": "success",
+            "message": f"Tag '{name}' (id={tag_id}) deleted",
+            "tag_id": tag_id,
+            "tag_name": name,
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to delete tag: {str(e)}"}
