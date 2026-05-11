@@ -650,6 +650,20 @@ async def delete_tag(
             client.service.accounts().containers().workspaces().tags().get(path=path)
         )
         name = tag.get("name")
+        paused = bool(tag.get("paused", False))
+
+        if not paused and not force:
+            return {
+                "status": "error",
+                "code": "not_paused",
+                "message": (
+                    f"Refusing to delete unpaused tag '{name}' (id={tag_id}). "
+                    "Pause it first via pause_tag, or pass force=True."
+                ),
+                "tag_id": tag_id,
+                "tag_name": name,
+                "paused": paused,
+            }
 
         await _run(
             client.service.accounts().containers().workspaces().tags().delete(path=path)

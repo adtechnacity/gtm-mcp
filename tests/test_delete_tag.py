@@ -47,3 +47,49 @@ class TestDeleteTagHappyPath:
         tags.delete.assert_called_once()
         delete_call = tags.delete.call_args
         assert delete_call.kwargs["path"] == "accounts/1/containers/2/workspaces/54/tags/453"
+
+
+class TestDeleteTagPauseGuard:
+    @pytest.mark.asyncio
+    async def test_unpaused_tag_refuses_delete_without_force(self):
+        from fastmcp_gtm_write_tools import delete_tag
+
+        tag = {"name": "Live Tag", "tagId": "100",
+               "fingerprint": "fp1", "paused": False}
+        client, tags = _make_mock_client(tag)
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await delete_tag(
+                account_id="1", container_id="2", tag_id="100"
+            )
+
+        assert result["status"] == "error"
+        assert result["code"] == "not_paused"
+        assert result["tag_id"] == "100"
+        assert result["tag_name"] == "Live Tag"
+        assert result["paused"] is False
+        assert "pause_tag" in result["message"]
+        assert "force=True" in result["message"]
+        tags.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_tag_missing_paused_field_is_treated_as_unpaused(self):
+        """GTM omits the `paused` field when False — must not delete."""
+        from fastmcp_gtm_write_tools import delete_tag
+
+        tag = {"name": "Live Tag", "tagId": "100", "fingerprint": "fp1"}
+        client, tags = _make_mock_client(tag)
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await delete_tag(
+                account_id="1", container_id="2", tag_id="100"
+            )
+
+        assert result["status"] == "error"
+        assert result["code"] == "not_paused"
+        assert result["paused"] is False
+        tags.delete.assert_not_called()
