@@ -15,6 +15,7 @@ from fastmcp_gtm_helpers import (
     _validate_consent_params, _build_consent_settings,
     _validate_ids, _resolve_workspace_parent,
     _batch_update_tags,
+    _dsl_to_gtm_filter, SUPPORTED_DSL_OPERATORS, SUPPORTED_TRIGGER_TYPES,
 )
 
 
@@ -314,20 +315,35 @@ async def create_trigger(
     account_id: str,
     container_id: str,
     trigger_name: str,
-    event_name: str,
+    *,
+    trigger_type: str = "customEvent",
+    event_name: str | None = None,
+    filters: list | None = None,
     workspace_id: str = "1"
 ) -> dict:
-    """Create a custom event trigger in a GTM workspace.
+    """Create a GTM trigger of the given type, with optional filter conditions.
 
-    Creates a trigger of type 'customEvent' that fires when a matching event
-    is pushed to the dataLayer. For example, to fire on
-    dataLayer.push({'event': 'consent_update'}), set event_name to "consent_update".
+    Two shapes are supported:
+
+    1. customEvent (default): pass ``event_name`` to fire when
+       dataLayer.push({'event': <event_name>}) occurs. ``filters`` may also
+       be passed to add additional conditions on top of the event match.
+    2. Any other supported type (linkClick, click, pageview, domReady,
+       windowLoaded, formSubmission, historyChange, jsError): pass
+       ``filters`` (required). Each filter is a friendly dict, e.g.
+       ``{"variable": "dl_browser", "operator": "equals", "value": "Chrome",
+       "negate": False}``. The tool converts to GTM's verbose filter shape.
 
     Args:
         account_id: GTM Account ID
         container_id: GTM Container ID
-        trigger_name: Display name for the trigger in GTM (e.g., "CE - consent_update")
-        event_name: The custom event name to match (e.g., "consent_update")
+        trigger_name: Display name for the trigger in GTM
+        trigger_type: One of customEvent, linkClick, click, pageview,
+            domReady, windowLoaded, formSubmission, historyChange, jsError.
+            Defaults to customEvent.
+        event_name: For customEvent only — the dataLayer event name to match.
+        filters: List of friendly filter dicts (see DSL above). Required for
+            non-customEvent types; optional extra filters for customEvent.
         workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
     try:
@@ -335,40 +351,70 @@ async def create_trigger(
         if error:
             return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        if trigger_type not in SUPPORTED_TRIGGER_TYPES:
+            return {
+                "status": "error",
+                "message": (
+                    f"unsupported trigger_type '{trigger_type}'; "
+                    f"supported: {sorted(SUPPORTED_TRIGGER_TYPES)}"
+                ),
+            }
 
-        trigger_body = {
-            'name': trigger_name,
-            'type': 'customEvent',
-            'customEventFilter': [
-                {
-                    'type': 'equals',
-                    'parameter': [
-                        {'key': 'arg0', 'value': '{{_event}}', 'type': 'template'},
-                        {'key': 'arg1', 'value': event_name, 'type': 'template'}
-                    ]
+        if trigger_type == "customEvent":
+            if not event_name and not filters:
+                return {
+                    "status": "error",
+                    "message": "customEvent requires event_name or filters",
                 }
-            ]
-        }
+        else:
+            if not filters:
+                return {
+                    "status": "error",
+                    "message": f"trigger_type '{trigger_type}' requires filters",
+                }
 
-        result = await _run(client.service.accounts().containers().workspaces().triggers().create(
-            parent=parent,
-            body=trigger_body
-        ))
+        client = get_gtm_client()
+        workspace_id, parent = await _resolve_workspace_parent(
+            client, account_id, container_id, workspace_id
+        )
+
+        trigger_body: dict = {"name": trigger_name, "type": trigger_type}
+
+        if trigger_type == "customEvent":
+            if event_name:
+                trigger_body["customEventFilter"] = [
+                    {
+                        "type": "equals",
+                        "parameter": [
+                            {"key": "arg0", "value": "{{_event}}", "type": "template"},
+                            {"key": "arg1", "value": event_name, "type": "template"},
+                        ],
+                    }
+                ]
+            if filters:
+                trigger_body["filter"] = [_dsl_to_gtm_filter(f) for f in filters]
+        else:
+            trigger_body["filter"] = [_dsl_to_gtm_filter(f) for f in filters]
+
+        result = await _run(
+            client.service.accounts().containers().workspaces().triggers().create(
+                parent=parent,
+                body=trigger_body,
+            )
+        )
 
         return {
             "status": "success",
-            "message": f"Custom event trigger '{trigger_name}' created successfully",
-            "trigger_id": result.get('triggerId'),
+            "message": f"Trigger '{trigger_name}' created",
+            "trigger_id": result.get("triggerId"),
             "trigger_name": trigger_name,
-            "event_name": event_name,
-            "path": result.get('path')
+            "trigger_type": trigger_type,
+            "path": result.get("path"),
         }
     except Exception as e:
         return {
             "status": "error",
-            "message": f"Failed to create trigger: {str(e)}"
+            "message": f"Failed to create trigger: {str(e)}",
         }
 
 

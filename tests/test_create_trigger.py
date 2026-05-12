@@ -91,3 +91,156 @@ class TestDslToGtmFilter:
             {"variable": "v", "operator": "equals", "value": ""}
         )
         assert out_empty["parameter"][1]["value"] == ""
+
+
+def _make_mock_trigger_client(created_id: str = "999"):
+    """Build a MagicMock GTM client whose triggers().create(parent, body)
+    echoes the body back with triggerId + path populated."""
+    client = MagicMock()
+    triggers = client.service.accounts().containers().workspaces().triggers()
+
+    def _create(parent, body):
+        result_body = dict(body)
+        result_body["triggerId"] = created_id
+        result_body["path"] = f"{parent}/triggers/{created_id}"
+        create_req = MagicMock()
+        create_req.execute = MagicMock(return_value=result_body)
+        return create_req
+
+    triggers.create = MagicMock(side_effect=_create)
+    return client, triggers
+
+
+class TestCreateTriggerBackCompat:
+    @pytest.mark.asyncio
+    async def test_event_name_only_builds_customevent_body(self):
+        """Old-style call (event_name only, no trigger_type) must produce
+        the same body shape today's create_trigger produced."""
+        from fastmcp_gtm_write_tools import create_trigger
+
+        client, triggers = _make_mock_trigger_client(created_id="500")
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await create_trigger(
+                account_id="1", container_id="2",
+                trigger_name="CE - consent_update",
+                event_name="consent_update",
+            )
+
+        assert result["status"] == "success"
+        assert result["trigger_id"] == "500"
+        assert result["trigger_name"] == "CE - consent_update"
+        assert result["trigger_type"] == "customEvent"
+
+        body = triggers.create.call_args.kwargs["body"]
+        assert body == {
+            "name": "CE - consent_update",
+            "type": "customEvent",
+            "customEventFilter": [
+                {
+                    "type": "equals",
+                    "parameter": [
+                        {"key": "arg0", "value": "{{_event}}", "type": "template"},
+                        {"key": "arg1", "value": "consent_update", "type": "template"},
+                    ],
+                }
+            ],
+        }
+
+
+class TestCreateTriggerLinkClick:
+    @pytest.mark.asyncio
+    async def test_linkclick_with_three_filters_builds_filter_list(self):
+        """Mirror trigger 77's structure: linkClick with a filter list and
+        no customEventFilter."""
+        from fastmcp_gtm_write_tools import create_trigger
+
+        client, triggers = _make_mock_trigger_client(created_id="600")
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("54", "accounts/1/containers/2/workspaces/54"))):
+            result = await create_trigger(
+                account_id="1", container_id="2", workspace_id="54",
+                trigger_name="Chrome Mobile Click Outs - /ma/ Enabled",
+                trigger_type="linkClick",
+                filters=[
+                    {"variable": "dl_browser", "operator": "equals",
+                     "value": "Chrome"},
+                    {"variable": "Page URL", "operator": "contains",
+                     "value": "/ma/"},
+                    {"variable": "VENDOR_G_ADS_CONVERSION_ID",
+                     "operator": "equals", "value": "null", "negate": True},
+                ],
+            )
+
+        assert result["status"] == "success"
+        assert result["trigger_id"] == "600"
+        assert result["trigger_type"] == "linkClick"
+
+        body = triggers.create.call_args.kwargs["body"]
+        assert body["name"] == "Chrome Mobile Click Outs - /ma/ Enabled"
+        assert body["type"] == "linkClick"
+        assert "customEventFilter" not in body
+        assert body["filter"] == [
+            {
+                "type": "equals",
+                "parameter": [
+                    {"type": "template", "key": "arg0", "value": "{{dl_browser}}"},
+                    {"type": "template", "key": "arg1", "value": "Chrome"},
+                ],
+            },
+            {
+                "type": "contains",
+                "parameter": [
+                    {"type": "template", "key": "arg0", "value": "{{Page URL}}"},
+                    {"type": "template", "key": "arg1", "value": "/ma/"},
+                ],
+            },
+            {
+                "type": "equals",
+                "parameter": [
+                    {"type": "template", "key": "arg0",
+                     "value": "{{VENDOR_G_ADS_CONVERSION_ID}}"},
+                    {"type": "template", "key": "arg1", "value": "null"},
+                    {"type": "boolean", "key": "negate", "value": "true"},
+                ],
+            },
+        ]
+
+    @pytest.mark.asyncio
+    async def test_customevent_with_extra_filters_keeps_both_sections(self):
+        """customEvent with filters= adds a filter section in addition to
+        the customEventFilter that matches the event name."""
+        from fastmcp_gtm_write_tools import create_trigger
+
+        client, triggers = _make_mock_trigger_client()
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await create_trigger(
+                account_id="1", container_id="2",
+                trigger_name="CE with filter",
+                event_name="my_event",
+                filters=[{"variable": "Page URL", "operator": "contains", "value": "/x/"}],
+            )
+
+        assert result["status"] == "success"
+        body = triggers.create.call_args.kwargs["body"]
+        assert body["type"] == "customEvent"
+        # event-name match still present
+        assert body["customEventFilter"][0]["parameter"][0]["value"] == "{{_event}}"
+        assert body["customEventFilter"][0]["parameter"][1]["value"] == "my_event"
+        # extra filter present
+        assert body["filter"] == [
+            {
+                "type": "contains",
+                "parameter": [
+                    {"type": "template", "key": "arg0", "value": "{{Page URL}}"},
+                    {"type": "template", "key": "arg1", "value": "/x/"},
+                ],
+            }
+        ]
