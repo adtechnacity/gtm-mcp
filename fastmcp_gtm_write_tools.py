@@ -16,7 +16,7 @@ from fastmcp_gtm_helpers import (
     _validate_consent_params, _build_consent_settings,
     _validate_ids, _resolve_workspace_parent,
     _batch_update_tags,
-    _dsl_to_gtm_filter, SUPPORTED_DSL_OPERATORS, SUPPORTED_TRIGGER_TYPES,
+    _dsl_to_gtm_filter, SUPPORTED_TRIGGER_TYPES,
 )
 
 
@@ -311,6 +311,42 @@ async def create_datalayer_variables_batch(account_id: str, container_id: str, v
 # Triggers
 # ---------------------------------------------------------------------------
 
+
+def _build_trigger_body(
+    trigger_name: str,
+    trigger_type: str,
+    event_name: str | None,
+    filters: list | None,
+) -> dict:
+    """Build the GTM trigger body for create_trigger.
+
+    Extracted so the surrounding tool can stay below the cognitive-complexity
+    threshold. For customEvent triggers, attaches the {{_event}} match when
+    event_name is given and the DSL-converted filter list when filters is
+    given. For all other trigger types, attaches only the DSL-converted
+    filter list (filters must be present; callers guard this upstream).
+    """
+    body: dict = {"name": trigger_name, "type": trigger_type}
+
+    if trigger_type == "customEvent":
+        if event_name:
+            body["customEventFilter"] = [
+                {
+                    "type": "equals",
+                    "parameter": [
+                        {"key": "arg0", "value": "{{_event}}", "type": "template"},
+                        {"key": "arg1", "value": event_name, "type": "template"},
+                    ],
+                }
+            ]
+        if filters:
+            body["filter"] = [_dsl_to_gtm_filter(f) for f in filters]
+    else:
+        body["filter"] = [_dsl_to_gtm_filter(f) for f in filters]
+
+    return body
+
+
 @mcp.tool()
 async def create_trigger(
     account_id: str,
@@ -379,23 +415,7 @@ async def create_trigger(
             client, account_id, container_id, workspace_id
         )
 
-        trigger_body: dict = {"name": trigger_name, "type": trigger_type}
-
-        if trigger_type == "customEvent":
-            if event_name:
-                trigger_body["customEventFilter"] = [
-                    {
-                        "type": "equals",
-                        "parameter": [
-                            {"key": "arg0", "value": "{{_event}}", "type": "template"},
-                            {"key": "arg1", "value": event_name, "type": "template"},
-                        ],
-                    }
-                ]
-            if filters:
-                trigger_body["filter"] = [_dsl_to_gtm_filter(f) for f in filters]
-        else:
-            trigger_body["filter"] = [_dsl_to_gtm_filter(f) for f in filters]
+        trigger_body = _build_trigger_body(trigger_name, trigger_type, event_name, filters)
 
         result = await _run(
             client.service.accounts().containers().workspaces().triggers().create(
