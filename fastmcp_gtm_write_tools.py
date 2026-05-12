@@ -676,3 +676,87 @@ async def delete_tag(
         }
     except Exception as e:
         return {"status": "error", "message": f"Failed to delete tag: {str(e)}"}
+
+
+# ---------------------------------------------------------------------------
+# Update variable
+# ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def update_gtm_variable(
+    account_id: str,
+    container_id: str,
+    variable_id: str,
+    *,
+    name: str | None = None,
+    parameters: list | None = None,
+    javascript: str | None = None,
+    notes: str | None = None,
+    parent_folder_id: str | None = None,
+    workspace_id: str = "1",
+) -> dict:
+    """Update an existing GTM variable in place (partial update).
+
+    Fetches the variable, mutates only the fields you passed, then writes
+    it back with fingerprint concurrency. Preserves the variable's ID so
+    every tag/trigger reference to ``{{variable_name}}`` keeps working.
+
+    For jsm (Custom JavaScript) variables, pass ``javascript=<source>`` as
+    a shortcut; the tool builds the right parameter list for you. For any
+    variable type, pass ``parameters=<list of GTM parameter dicts>`` to
+    replace the parameter list directly. ``parameters`` and ``javascript``
+    are mutually exclusive.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        variable_id: The variable ID to update
+        name: New display name (optional)
+        parameters: Raw GTM parameter list, replaces existing (optional)
+        javascript: Custom JS source; jsm variables only (optional)
+        notes: New notes (optional)
+        parent_folder_id: New parent folder ID (optional)
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(
+            account_id=account_id, container_id=container_id, variable_id=variable_id
+        )
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, ws_parent = await _resolve_workspace_parent(
+            client, account_id, container_id, workspace_id
+        )
+        path = f"{ws_parent}/variables/{variable_id}"
+
+        variable = await _run(
+            client.service.accounts().containers().workspaces().variables().get(path=path)
+        )
+
+        updated_fields: list[str] = []
+
+        if javascript is not None:
+            variable["parameter"] = [
+                {"type": "template", "key": "javascript", "value": javascript}
+            ]
+            updated_fields.append("parameters")
+
+        updated = await _run(
+            client.service.accounts().containers().workspaces().variables().update(
+                path=path, body=variable, fingerprint=variable.get("fingerprint"),
+            )
+        )
+
+        return {
+            "status": "success",
+            "message": f"Variable '{updated.get('name')}' updated",
+            "variable_id": variable_id,
+            "variable_name": updated.get("name"),
+            "variable_type": updated.get("type"),
+            "updated_fields": updated_fields,
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to update variable: {str(e)}"}
