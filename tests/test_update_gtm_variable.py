@@ -68,3 +68,101 @@ class TestUpdateGtmVariableJavascriptShortcut:
         assert call.kwargs["body"]["parameter"] == [
             {"type": "template", "key": "javascript", "value": new_source}
         ]
+
+
+class TestUpdateGtmVariableOtherFields:
+    @pytest.mark.asyncio
+    async def test_raw_parameters_update_replaces_parameter_list(self):
+        from fastmcp_gtm_write_tools import update_gtm_variable
+
+        variable = {
+            "name": "MY_VAR", "variableId": "10", "type": "c",
+            "fingerprint": "fp", "parameter": [
+                {"type": "template", "key": "value", "value": "old"}
+            ],
+        }
+        client, variables = _make_mock_client(variable)
+        new_params = [{"type": "template", "key": "value", "value": "new"}]
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await update_gtm_variable(
+                account_id="1", container_id="2", variable_id="10",
+                parameters=new_params,
+            )
+
+        assert result["status"] == "success"
+        assert result["updated_fields"] == ["parameters"]
+        assert variables.update.call_args.kwargs["body"]["parameter"] == new_params
+
+    @pytest.mark.asyncio
+    async def test_name_only_update_leaves_parameter_list_intact(self):
+        from fastmcp_gtm_write_tools import update_gtm_variable
+
+        original_params = [{"type": "template", "key": "value", "value": "x"}]
+        variable = {
+            "name": "OLD_NAME", "variableId": "10", "type": "c",
+            "fingerprint": "fp", "parameter": original_params,
+        }
+        client, variables = _make_mock_client(variable)
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await update_gtm_variable(
+                account_id="1", container_id="2", variable_id="10",
+                name="NEW_NAME",
+            )
+
+        assert result["status"] == "success"
+        assert result["updated_fields"] == ["name"]
+        body = variables.update.call_args.kwargs["body"]
+        assert body["name"] == "NEW_NAME"
+        assert body["parameter"] == original_params
+
+    @pytest.mark.asyncio
+    async def test_combined_name_and_notes_update(self):
+        from fastmcp_gtm_write_tools import update_gtm_variable
+
+        variable = {
+            "name": "V", "variableId": "10", "type": "c",
+            "fingerprint": "fp", "parameter": [],
+        }
+        client, variables = _make_mock_client(variable)
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await update_gtm_variable(
+                account_id="1", container_id="2", variable_id="10",
+                name="V2", notes="ticket-1234",
+            )
+
+        assert result["status"] == "success"
+        assert set(result["updated_fields"]) == {"name", "notes"}
+        body = variables.update.call_args.kwargs["body"]
+        assert body["name"] == "V2"
+        assert body["notes"] == "ticket-1234"
+
+    @pytest.mark.asyncio
+    async def test_parent_folder_id_update(self):
+        from fastmcp_gtm_write_tools import update_gtm_variable
+
+        variable = {
+            "name": "V", "variableId": "10", "type": "c",
+            "fingerprint": "fp", "parameter": [], "parentFolderId": "100",
+        }
+        client, variables = _make_mock_client(variable)
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await update_gtm_variable(
+                account_id="1", container_id="2", variable_id="10",
+                parent_folder_id="200",
+            )
+
+        assert result["status"] == "success"
+        assert result["updated_fields"] == ["parent_folder_id"]
+        assert variables.update.call_args.kwargs["body"]["parentFolderId"] == "200"

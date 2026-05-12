@@ -743,6 +743,19 @@ async def update_gtm_variable(
                 {"type": "template", "key": "javascript", "value": javascript}
             ]
             updated_fields.append("parameters")
+        elif parameters is not None:
+            variable["parameter"] = parameters
+            updated_fields.append("parameters")
+
+        if name is not None:
+            variable["name"] = name
+            updated_fields.append("name")
+        if notes is not None:
+            variable["notes"] = notes
+            updated_fields.append("notes")
+        if parent_folder_id is not None:
+            variable["parentFolderId"] = parent_folder_id
+            updated_fields.append("parent_folder_id")
 
         updated = await _run(
             client.service.accounts().containers().workspaces().variables().update(
