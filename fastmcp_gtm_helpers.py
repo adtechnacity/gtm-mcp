@@ -279,6 +279,8 @@ def _dsl_to_gtm_filter(entry: dict) -> dict:
         raise ValueError("filter entry missing 'operator'")
     if "value" not in entry:
         raise ValueError("filter entry missing 'value'")
+    if entry["value"] is None:
+        raise ValueError("filter entry: 'value' must not be None")
 
     operator = entry["operator"]
     if operator not in SUPPORTED_DSL_OPERATORS:

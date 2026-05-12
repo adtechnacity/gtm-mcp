@@ -72,3 +72,22 @@ class TestDslToGtmFilter:
         from fastmcp_gtm_helpers import _dsl_to_gtm_filter
         with pytest.raises(ValueError, match="operator"):
             _dsl_to_gtm_filter({"variable": "v", "operator": "lessThan", "value": "5"})
+
+    def test_value_none_raises(self):
+        from fastmcp_gtm_helpers import _dsl_to_gtm_filter
+        with pytest.raises(ValueError, match="value"):
+            _dsl_to_gtm_filter({"variable": "v", "operator": "equals", "value": None})
+
+    def test_value_falsy_but_not_none_is_stringified(self):
+        """Pin behavior: 0, False, and '' are valid values; only None is rejected."""
+        from fastmcp_gtm_helpers import _dsl_to_gtm_filter
+
+        out_zero = _dsl_to_gtm_filter(
+            {"variable": "v", "operator": "equals", "value": 0}
+        )
+        assert out_zero["parameter"][1]["value"] == "0"
+
+        out_empty = _dsl_to_gtm_filter(
+            {"variable": "v", "operator": "equals", "value": ""}
+        )
+        assert out_empty["parameter"][1]["value"] == ""
