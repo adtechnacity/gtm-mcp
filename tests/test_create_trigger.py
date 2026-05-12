@@ -244,3 +244,83 @@ class TestCreateTriggerLinkClick:
                 ],
             }
         ]
+
+
+class TestCreateTriggerValidation:
+    @pytest.mark.asyncio
+    async def test_unsupported_trigger_type_returns_error(self):
+        from fastmcp_gtm_write_tools import create_trigger
+
+        result = await create_trigger(
+            account_id="1", container_id="2",
+            trigger_name="X", trigger_type="scrollDepth",
+            filters=[{"variable": "v", "operator": "equals", "value": "x"}],
+        )
+        assert result["status"] == "error"
+        assert "scrollDepth" in result["message"]
+        assert "supported" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_customevent_with_neither_event_name_nor_filters_returns_error(self):
+        from fastmcp_gtm_write_tools import create_trigger
+
+        result = await create_trigger(
+            account_id="1", container_id="2", trigger_name="X",
+        )
+        assert result["status"] == "error"
+        assert "customEvent" in result["message"]
+        assert "event_name" in result["message"]
+        assert "filters" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_linkclick_with_no_filters_returns_error(self):
+        from fastmcp_gtm_write_tools import create_trigger
+
+        result = await create_trigger(
+            account_id="1", container_id="2",
+            trigger_name="X", trigger_type="linkClick",
+        )
+        assert result["status"] == "error"
+        assert "linkClick" in result["message"]
+        assert "filters" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_linkclick_with_empty_filters_returns_error(self):
+        from fastmcp_gtm_write_tools import create_trigger
+
+        result = await create_trigger(
+            account_id="1", container_id="2",
+            trigger_name="X", trigger_type="linkClick", filters=[],
+        )
+        assert result["status"] == "error"
+        assert "filters" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_bad_operator_in_filter_returns_error(self):
+        from fastmcp_gtm_write_tools import create_trigger
+
+        client, triggers = _make_mock_trigger_client()
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await create_trigger(
+                account_id="1", container_id="2",
+                trigger_name="X", trigger_type="linkClick",
+                filters=[{"variable": "v", "operator": "lessThan", "value": "5"}],
+            )
+        assert result["status"] == "error"
+        assert "operator" in result["message"]
+        # The error from _dsl_to_gtm_filter should be surfaced via the
+        # caught-exception path; make sure no trigger was actually created.
+        triggers.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_invalid_account_id_returns_error(self):
+        from fastmcp_gtm_write_tools import create_trigger
+
+        result = await create_trigger(
+            account_id="bad", container_id="2",
+            trigger_name="X", event_name="e",
+        )
+        assert result["status"] == "error"
+        assert "account_id" in result["message"]
