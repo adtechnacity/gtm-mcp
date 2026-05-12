@@ -243,3 +243,59 @@ async def _batch_update_tags(client, path_prefix, tag_ids, mutate_fn,
     results["status"] = "error" if n_failed and not n_updated else "partial" if n_failed else "success"
     results["summary"] = f"Updated {n_updated}/{len(tag_ids)} tags, skipped {n_skipped}, failed {n_failed}"
     return results
+
+
+# ---------------------------------------------------------------------------
+# Trigger filter DSL
+# ---------------------------------------------------------------------------
+
+SUPPORTED_DSL_OPERATORS = frozenset(
+    {"equals", "contains", "startsWith", "endsWith", "matchRegex"}
+)
+
+SUPPORTED_TRIGGER_TYPES = frozenset(
+    {
+        "customEvent", "linkClick", "click", "pageview", "domReady",
+        "windowLoaded", "formSubmission", "historyChange", "jsError",
+    }
+)
+
+
+def _dsl_to_gtm_filter(entry: dict) -> dict:
+    """Convert a friendly DSL filter entry to GTM's verbose filter shape.
+
+    Input: {"variable": "dl_browser", "operator": "equals", "value": "Chrome",
+            "negate": False}
+    Output: GTM filter dict with type + parameter list (arg0, arg1, optional
+    negate boolean), matching the shape used in existing triggers (e.g.,
+    trigger 77 in the cos-tags workspace).
+
+    Auto-wraps `variable` in `{{...}}` if not already wrapped. Stringifies
+    `value`. Raises ValueError on missing keys or unsupported operator.
+    """
+    if "variable" not in entry:
+        raise ValueError("filter entry missing 'variable'")
+    if "operator" not in entry:
+        raise ValueError("filter entry missing 'operator'")
+    if "value" not in entry:
+        raise ValueError("filter entry missing 'value'")
+
+    operator = entry["operator"]
+    if operator not in SUPPORTED_DSL_OPERATORS:
+        raise ValueError(
+            f"filter entry: unsupported operator '{operator}'; "
+            f"supported: {sorted(SUPPORTED_DSL_OPERATORS)}"
+        )
+
+    variable = entry["variable"]
+    if not variable.startswith("{{"):
+        variable = "{{" + variable + "}}"
+
+    parameter = [
+        {"type": "template", "key": "arg0", "value": variable},
+        {"type": "template", "key": "arg1", "value": str(entry["value"])},
+    ]
+    if entry.get("negate"):
+        parameter.append({"type": "boolean", "key": "negate", "value": "true"})
+
+    return {"type": operator, "parameter": parameter}
