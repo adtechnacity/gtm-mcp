@@ -166,3 +166,70 @@ class TestUpdateGtmVariableOtherFields:
         assert result["status"] == "success"
         assert result["updated_fields"] == ["parent_folder_id"]
         assert variables.update.call_args.kwargs["body"]["parentFolderId"] == "200"
+
+
+class TestUpdateGtmVariableValidation:
+    @pytest.mark.asyncio
+    async def test_empty_variable_id_returns_error(self):
+        from fastmcp_gtm_write_tools import update_gtm_variable
+
+        result = await update_gtm_variable(
+            account_id="1", container_id="2", variable_id="",
+            javascript="function() {}",
+        )
+        assert result["status"] == "error"
+        assert "variable_id" in result["message"]
+
+    @pytest.mark.asyncio
+    async def test_nothing_to_update_returns_error(self):
+        from fastmcp_gtm_write_tools import update_gtm_variable
+
+        # All optional fields omitted. Must not call .get() or .update().
+        variable = {"name": "V", "variableId": "10", "type": "c",
+                    "fingerprint": "fp", "parameter": []}
+        client, variables = _make_mock_client(variable)
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await update_gtm_variable(
+                account_id="1", container_id="2", variable_id="10",
+            )
+
+        assert result["status"] == "error"
+        assert "nothing to update" in result["message"].lower()
+        variables.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_parameters_and_javascript_both_set_returns_error(self):
+        from fastmcp_gtm_write_tools import update_gtm_variable
+
+        result = await update_gtm_variable(
+            account_id="1", container_id="2", variable_id="10",
+            parameters=[{"type": "template", "key": "value", "value": "x"}],
+            javascript="function() {}",
+        )
+        assert result["status"] == "error"
+        assert "mutually exclusive" in result["message"].lower()
+
+    @pytest.mark.asyncio
+    async def test_javascript_on_non_jsm_variable_returns_error(self):
+        from fastmcp_gtm_write_tools import update_gtm_variable
+
+        # Variable type is "v" (Data Layer Variable), not "jsm".
+        variable = {"name": "DLV", "variableId": "10", "type": "v",
+                    "fingerprint": "fp", "parameter": []}
+        client, variables = _make_mock_client(variable)
+
+        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
+             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
+            result = await update_gtm_variable(
+                account_id="1", container_id="2", variable_id="10",
+                javascript="function() {}",
+            )
+
+        assert result["status"] == "error"
+        assert "jsm" in result["message"]
+        assert "'v'" in result["message"]
+        variables.update.assert_not_called()

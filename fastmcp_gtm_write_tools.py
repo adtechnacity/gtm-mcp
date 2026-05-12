@@ -726,6 +726,17 @@ async def update_gtm_variable(
         if error:
             return {"status": "error", "message": error}
 
+        if parameters is not None and javascript is not None:
+            return {
+                "status": "error",
+                "message": "parameters and javascript are mutually exclusive",
+            }
+        if all(v is None for v in (name, parameters, javascript, notes, parent_folder_id)):
+            return {
+                "status": "error",
+                "message": "nothing to update (pass at least one of name, parameters, javascript, notes, parent_folder_id)",
+            }
+
         client = get_gtm_client()
         _, ws_parent = await _resolve_workspace_parent(
             client, account_id, container_id, workspace_id
@@ -735,6 +746,15 @@ async def update_gtm_variable(
         variable = await _run(
             client.service.accounts().containers().workspaces().variables().get(path=path)
         )
+
+        if javascript is not None and variable.get("type") != "jsm":
+            return {
+                "status": "error",
+                "message": (
+                    f"javascript shortcut only valid for jsm variables; "
+                    f"this variable is type '{variable.get('type')}'"
+                ),
+            }
 
         updated_fields: list[str] = []
 
