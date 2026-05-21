@@ -126,6 +126,8 @@ Or using the installed entry point:
 - `update_tags_consent_settings_batch` — Set consent config for multiple tags
 - `update_tag_html` — Replace the HTML body of a Custom HTML tag
 - `update_tag_parameters` — Upsert raw GTM `parameter` dicts on any tag by `key` (e.g. add `eventParameters` to a GA4 event tag without recreating it). See [Updating tag parameters](#updating-tag-parameters) below.
+- `update_trigger_parameters` — Overwrite top-level fields on a trigger in place (`name`, `filter`, `customEventFilter`, `autoEventFilter`, `interval`, `limit`, `checkValidation`, `waitForTags`). Keeps the trigger ID stable so consuming tags don't need re-attachment. See [Updating trigger filters](#updating-trigger-filters) below.
+- `update_trigger_filter` — Ergonomic wrapper: replace a trigger's `filter` (or `customEventFilter` / `autoEventFilter`) using `[{operator, lhs, rhs}, ...]` instead of hand-rolling Condition dicts.
 - `add_firing_trigger_to_tags_batch` — Append a firing trigger to multiple tags
 - `add_blocking_trigger_to_tags_batch` — Append a blocking (exception) trigger to multiple tags
 - `set_firing_triggers_on_tags_batch` — Replace the firing-trigger list on multiple tags (useful for migrating between triggers)
@@ -171,6 +173,46 @@ Or using the installed entry point:
 ```
 
 The whole `eventParameters` list is replaced atomically — read-then-merge locally rather than calling the tool twice. Other top-level params (`eventName`, `measurementIdOverride`, `userProperties`, etc.) are untouched.
+
+### Updating trigger filters
+
+`update_trigger_parameters` rewrites top-level fields on a trigger without changing the trigger ID. The most common use is widening or narrowing a trigger's `filter` conditions as a route/URL pattern evolves — useful because the alternative (delete + recreate) yields a new trigger ID that breaks every consuming tag's `firingTriggerId` list.
+
+**Widen "Add to Cart Navigate" from `Page Path contains /create` to a regex matching `/create` or `/studio`:**
+
+```python
+update_trigger_parameters(
+    account_id="6332661990",
+    container_id="239933263",
+    workspace_id="136",
+    trigger_id="7",
+    fields={
+        "filter": [{
+            "type": "matchRegex",
+            "parameter": [
+                {"type": "template", "key": "arg0", "value": "{{Page Path}}"},
+                {"type": "template", "key": "arg1", "value": "/(create|studio)(?:[?/]|$)"},
+            ],
+        }],
+    },
+)
+```
+
+Or with the ergonomic wrapper:
+
+```python
+update_trigger_filter(
+    account_id="6332661990",
+    container_id="239933263",
+    workspace_id="136",
+    trigger_id="7",
+    conditions=[
+        {"operator": "matchRegex", "lhs": "{{Page Path}}", "rhs": "/(create|studio)(?:[?/]|$)"},
+    ],
+)
+```
+
+List-valued fields (`filter`, `customEventFilter`, `autoEventFilter`) replace wholesale — pass `[]` to clear. Pass `None` for any *optional* key to remove it from the trigger; `name` is required by GTM and rejects `None` (omit the key to leave it unchanged). Keys not in `fields` are preserved. A missing trigger surfaces as a clear 404; a fingerprint mismatch surfaces as a 409 mentioning the workspace and trigger ID.
 
 ## CLI Tool
 

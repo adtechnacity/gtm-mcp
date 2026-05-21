@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0] - 2026-05-21
+
+### Added
+- `update_trigger_parameters` tool — overwrite top-level fields on a trigger in place (the trigger-side mirror of `update_tag_parameters`). Avoids the delete-and-recreate dance that shuffles trigger IDs and breaks every consuming tag's `firingTriggerId` list. Allowed keys: `name`, `filter`, `customEventFilter`, `autoEventFilter`, `interval`, `limit`, `checkValidation`, `waitForTags`. List-valued fields replace wholesale (pass `[]` to clear); `None` removes any optional key (rejected for the required `name` field). Uses fingerprint concurrency; surfaces 404 (missing trigger) and 409 (fingerprint conflict) with workspace + trigger context in the message.
+- `update_trigger_filter` tool — ergonomic wrapper that takes `[{operator, lhs, rhs}, ...]` and constructs the underlying GTM Condition dicts. Picks which list to replace via `target` (`filter` / `customEventFilter` / `autoEventFilter`).
+- `_validate_trigger_filters` and `_filter_tuples_to_conditions` helpers in `fastmcp_gtm_helpers` (the former moved out of `fastmcp_gtm_write_tools` so both modules share one implementation); covered by 14 new unit tests.
+
 ## [0.3.0] - 2026-05-01
 
 ### Added
