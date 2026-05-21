@@ -1,10 +1,11 @@
 """
 Write MCP tools for Google Tag Manager.
 
-Registers 17 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
+Registers 19 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
 create_tag, create_trigger, create_datalayer_variable, create_datalayer_variables_batch,
 create_js_variable, publish_gtm_container, update_tag_consent_settings,
 update_tags_consent_settings_batch, update_tag_html, update_tag_parameters,
+update_trigger_parameters, update_trigger_filter,
 delete_tag, delete_trigger, add_firing_trigger_to_tags_batch,
 add_blocking_trigger_to_tags_batch, set_firing_triggers_on_tags_batch,
 remove_firing_trigger_from_tags_batch, remove_blocking_trigger_from_tags_batch.
@@ -22,6 +23,8 @@ from fastmcp_gtm_helpers import (
     _remove_trigger_from_tags_batch,
     _set_triggers_on_tags_batch,
     _upsert_parameters,
+    _validate_trigger_filters,
+    _filter_tuples_to_conditions,
 )
 
 
@@ -346,29 +349,6 @@ async def create_js_variable(
 # Triggers
 # ---------------------------------------------------------------------------
 
-def _validate_trigger_filters(filters):
-    """Validate user-provided trigger filter conditions.
-
-    Each item must be a dict with string ``type`` and list ``parameter``,
-    where each parameter is a dict with ``key``, ``value``, and ``type``.
-    Returns an error message string, or None if valid.
-    """
-    if not isinstance(filters, list):
-        return "filters must be a list of condition dicts"
-    for i, cond in enumerate(filters):
-        if not isinstance(cond, dict):
-            return f"filters[{i}] must be a dict"
-        if not isinstance(cond.get("type"), str) or not cond["type"]:
-            return f"filters[{i}].type must be a non-empty string"
-        params = cond.get("parameter")
-        if not isinstance(params, list) or not params:
-            return f"filters[{i}].parameter must be a non-empty list"
-        for j, p in enumerate(params):
-            if not isinstance(p, dict) or not all(isinstance(p.get(k), str) for k in ("key", "value", "type")):
-                return f"filters[{i}].parameter[{j}] must be a dict with string key/value/type"
-    return None
-
-
 _VALID_TRIGGER_TYPES = {
     "pageview", "domReady", "windowLoaded", "customEvent", "click", "linkClick",
     "formSubmission", "timer", "elementVisibility", "historyChange", "scrollDepth",
@@ -574,6 +554,235 @@ async def delete_trigger(
             "status": "error",
             "message": f"Failed to delete trigger: {str(e)}"
         }
+
+
+# Top-level trigger fields that update_trigger_parameters will overwrite.
+# Anything outside this set is rejected client-side to catch typos before
+# the API does.
+_UPDATABLE_TRIGGER_FIELDS = frozenset({
+    "name",
+    "filter",
+    "customEventFilter",
+    "autoEventFilter",
+    "interval",
+    "limit",
+    "checkValidation",
+    "waitForTags",
+})
+
+_TRIGGER_FILTER_KEYS = ("filter", "customEventFilter", "autoEventFilter")
+
+
+def _http_status(exc) -> int | None:
+    """Extract HTTP status from a googleapiclient HttpError, if present."""
+    resp = getattr(exc, "resp", None)
+    status = getattr(resp, "status", None)
+    if status is None:
+        return None
+    try:
+        return int(status)
+    except (TypeError, ValueError):
+        return None
+
+
+async def _update_trigger_parameters_impl(
+    account_id: str,
+    container_id: str,
+    trigger_id: str,
+    fields: dict,
+    workspace_id: str = "1",
+) -> dict:
+    """Shared implementation for update_trigger_parameters / update_trigger_filter."""
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, trigger_id=trigger_id)
+        if error:
+            return {"status": "error", "message": error}
+        if not isinstance(fields, dict) or not fields:
+            return {"status": "error", "message": "fields must be a non-empty dict."}
+
+        unknown = sorted(set(fields) - _UPDATABLE_TRIGGER_FIELDS)
+        if unknown:
+            return {
+                "status": "error",
+                "message": f"Unsupported field(s) {unknown}. Allowed: {sorted(_UPDATABLE_TRIGGER_FIELDS)}",
+            }
+
+        if "name" in fields:
+            if fields["name"] is None:
+                return {"status": "error", "message": "fields['name'] cannot be None — name is required on GTM triggers. Omit the key to leave it unchanged."}
+            if not isinstance(fields["name"], str) or not fields["name"].strip():
+                return {"status": "error", "message": "fields['name'] must be a non-empty string."}
+
+        for key in _TRIGGER_FILTER_KEYS:
+            if key in fields and fields[key] is not None:
+                err = _validate_trigger_filters(fields[key])
+                if err:
+                    return {"status": "error", "message": f"fields['{key}']: {err}"}
+
+        for key in ("interval", "limit", "checkValidation", "waitForTags"):
+            if key in fields and fields[key] is not None and not isinstance(fields[key], dict):
+                return {
+                    "status": "error",
+                    "message": f"fields['{key}'] must be a GTM Parameter dict (e.g. {{'type': 'integer', 'key': '{key}', 'value': '...'}})",
+                }
+
+        client = get_gtm_client()
+        resolved_ws, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        path = f"{parent}/triggers/{trigger_id}"
+
+        try:
+            trigger = await _run(client.service.accounts().containers().workspaces().triggers().get(path=path))
+        except Exception as e:
+            if _http_status(e) == 404:
+                return {
+                    "status": "error",
+                    "message": f"Trigger '{trigger_id}' not found in workspace '{resolved_ws}' of container '{container_id}'.",
+                }
+            raise
+
+        updated_keys = []
+        for key, value in fields.items():
+            if value is None:
+                if key in trigger:
+                    del trigger[key]
+                    updated_keys.append(key)
+            else:
+                trigger[key] = value
+                updated_keys.append(key)
+
+        try:
+            updated = await _run(
+                client.service.accounts().containers().workspaces().triggers().update(
+                    path=path, body=trigger, fingerprint=trigger.get("fingerprint")
+                )
+            )
+        except Exception as e:
+            if _http_status(e) == 409:
+                return {
+                    "status": "error",
+                    "message": (
+                        f"Fingerprint conflict on trigger '{trigger_id}' in workspace "
+                        f"'{resolved_ws}' — the trigger changed since it was fetched. "
+                        "Re-fetch and retry."
+                    ),
+                }
+            raise
+
+        return {
+            "status": "success",
+            "message": f"Updated {len(updated_keys)} field(s) on trigger '{updated.get('name')}'",
+            "trigger_id": trigger_id,
+            "trigger_name": updated.get("name"),
+            "trigger_type": updated.get("type"),
+            "updated_keys": updated_keys,
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to update trigger parameters: {str(e)}",
+        }
+
+
+@mcp.tool()
+async def update_trigger_parameters(
+    account_id: str,
+    container_id: str,
+    trigger_id: str,
+    fields: dict,
+    workspace_id: str = "1",
+) -> dict:
+    """Upsert top-level fields on a GTM trigger in place.
+
+    Fetches the trigger, overwrites each key in ``fields`` on the resource,
+    and saves via tagmanager.accounts.containers.workspaces.triggers.update
+    with fingerprint-based optimistic concurrency. Keys not in ``fields`` are
+    preserved. Mirrors ``update_tag_parameters``' semantics for triggers.
+
+    Wholesale-replace semantic: list-valued fields (``filter``,
+    ``customEventFilter``, ``autoEventFilter``) overwrite the existing list.
+    Passing ``[]`` clears the list. Passing ``None`` for any *optional* key
+    removes that key from the trigger. ``name`` is required by GTM, so
+    ``None`` is rejected — omit the key to leave the name unchanged.
+
+    Supported keys:
+
+    - ``name`` (str)
+    - ``filter`` / ``customEventFilter`` / ``autoEventFilter`` (list of GTM
+      Condition dicts — same shape ``create_trigger``'s ``filters`` accepts)
+    - ``interval`` / ``limit`` — timer-trigger Parameter dicts (e.g.
+      ``{"type": "integer", "key": "interval", "value": "60000"}``)
+    - ``checkValidation`` / ``waitForTags`` — formSubmission-trigger
+      Parameter dicts (e.g. ``{"type": "boolean", "key": "checkValidation",
+      "value": "true"}``)
+
+    For the {operator, lhs, rhs} ergonomic form, see ``update_trigger_filter``.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        trigger_id: The trigger ID to update
+        fields: Dict of top-level trigger fields to overwrite
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    return await _update_trigger_parameters_impl(
+        account_id=account_id,
+        container_id=container_id,
+        trigger_id=trigger_id,
+        fields=fields,
+        workspace_id=workspace_id,
+    )
+
+
+@mcp.tool()
+async def update_trigger_filter(
+    account_id: str,
+    container_id: str,
+    trigger_id: str,
+    conditions: list,
+    target: str = "filter",
+    workspace_id: str = "1",
+) -> dict:
+    """Replace a trigger's filter list using the ergonomic ``{operator, lhs, rhs}`` form.
+
+    Convenience wrapper around ``update_trigger_parameters``. Each condition
+    is a dict like ``{"operator": "matchRegex", "lhs": "{{Page Path}}",
+    "rhs": "/(create|studio)(?:[?/]|$)"}`` — the tool builds the underlying
+    GTM Condition dicts (``arg0``/``arg1`` template parameters) for you.
+
+    Pass ``[]`` for ``conditions`` to clear the list wholesale (same semantic
+    as ``update_trigger_parameters``).
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        trigger_id: The trigger ID to update
+        conditions: List of ``{operator, lhs, rhs}`` dicts (or ``[]`` to clear)
+        target: Which list to replace — ``filter`` (default), ``customEventFilter``, or ``autoEventFilter``
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    if target not in _TRIGGER_FILTER_KEYS:
+        return {
+            "status": "error",
+            "message": f"target must be one of {list(_TRIGGER_FILTER_KEYS)} (got '{target}')",
+        }
+    if not isinstance(conditions, list):
+        return {"status": "error", "message": "conditions must be a list (use [] to clear)."}
+
+    if conditions:
+        try:
+            built = _filter_tuples_to_conditions(conditions)
+        except ValueError as ve:
+            return {"status": "error", "message": str(ve)}
+    else:
+        built = []
+
+    return await _update_trigger_parameters_impl(
+        account_id=account_id,
+        container_id=container_id,
+        trigger_id=trigger_id,
+        fields={target: built},
+        workspace_id=workspace_id,
+    )
 
 
 # ---------------------------------------------------------------------------

@@ -78,6 +78,9 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 | `update_tag_consent_settings` | Set consent config for one tag |
 | `update_tags_consent_settings_batch` | Set consent config for multiple tags |
 | `update_tag_html` | Replace the HTML body of a Custom HTML tag |
+| `update_tag_parameters` | Upsert raw GTM `parameter` dicts on any tag by `key` (works on every tag type — GA4 event/`gaawe`, config/`gtagjs`, conversion/`awct`, etc.) |
+| `update_trigger_parameters` | Overwrite top-level fields on a trigger in place (`name`, `filter`, `customEventFilter`, `autoEventFilter`, `interval`, `limit`, `checkValidation`, `waitForTags`) — keeps trigger ID stable |
+| `update_trigger_filter` | Ergonomic wrapper to replace a trigger's filter list using `[{operator, lhs, rhs}, ...]` |
 | `add_firing_trigger_to_tags_batch` | Append a firing trigger to multiple tags |
 | `add_blocking_trigger_to_tags_batch` | Append a blocking (exception) trigger to multiple tags |
 | `set_firing_triggers_on_tags_batch` | Replace the firing-trigger list on multiple tags |
@@ -145,7 +148,7 @@ create_js_variable(is_<cohort>_source) → create_trigger(customEvent + filters 
 
 ## GTM API v2 — Full Endpoint Reference
 
-The GTM API v2 has 18 resource families with ~105 methods total. This server currently implements 15 unique API methods. The table below shows implementation status.
+The GTM API v2 has 18 resource families with ~105 methods total. This server currently implements 17 unique API methods. The table below shows implementation status.
 
 ### accounts
 
@@ -200,9 +203,9 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 | Method | Implemented | Tool |
 |--------|-------------|------|
 | `triggers.list` | Yes | `list_gtm_triggers` |
-| `triggers.get` | No | — |
+| `triggers.get` | Yes | (internal — used by `update_trigger_parameters`) |
 | `triggers.create` | Yes | `create_trigger` |
-| `triggers.update` | No | — |
+| `triggers.update` | Yes | `update_trigger_parameters`, `update_trigger_filter` |
 | `triggers.delete` | Yes | `delete_trigger` |
 | `triggers.revert` | No | — |
 
@@ -338,7 +341,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 
 ### High — Complete CRUD on core resources
 - `tags.revert`
-- `triggers.get`, `triggers.update`, `triggers.revert`
+- `triggers.revert`
 - `variables.get`, `variables.update`
 - `workspaces.create`, `workspaces.get`
 

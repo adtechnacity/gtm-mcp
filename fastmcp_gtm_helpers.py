@@ -176,6 +176,60 @@ def _build_consent_settings(consent_status, consent_types):
     return settings
 
 
+def _validate_trigger_filters(filters):
+    """Validate user-provided trigger filter conditions.
+
+    Each item must be a dict with string ``type`` and list ``parameter``,
+    where each parameter is a dict with ``key``, ``value``, and ``type``.
+    Returns an error message string, or None if valid. An empty list is valid
+    (used to clear a filter list wholesale).
+    """
+    if not isinstance(filters, list):
+        return "filters must be a list of condition dicts"
+    for i, cond in enumerate(filters):
+        if not isinstance(cond, dict):
+            return f"filters[{i}] must be a dict"
+        if not isinstance(cond.get("type"), str) or not cond["type"]:
+            return f"filters[{i}].type must be a non-empty string"
+        params = cond.get("parameter")
+        if not isinstance(params, list) or not params:
+            return f"filters[{i}].parameter must be a non-empty list"
+        for j, p in enumerate(params):
+            if not isinstance(p, dict) or not all(isinstance(p.get(k), str) for k in ("key", "value", "type")):
+                return f"filters[{i}].parameter[{j}] must be a dict with string key/value/type"
+    return None
+
+
+def _filter_tuples_to_conditions(tuples):
+    """Convert ``[{operator, lhs, rhs}, ...]`` to GTM Condition dicts.
+
+    Each tuple becomes a Condition with ``type=operator`` and two template
+    parameters (``arg0=lhs``, ``arg1=rhs``). This is the ergonomic form most
+    callers want — they say "Page Path matchRegex /create" instead of hand-
+    rolling the parameter list. Raises ValueError on bad input.
+    """
+    if not isinstance(tuples, list) or not tuples:
+        raise ValueError("conditions must be a non-empty list")
+    result = []
+    for i, t in enumerate(tuples):
+        if not isinstance(t, dict):
+            raise ValueError(f"conditions[{i}] must be a dict with operator/lhs/rhs")
+        operator = t.get("operator")
+        lhs = t.get("lhs")
+        rhs = t.get("rhs")
+        for name, value in (("operator", operator), ("lhs", lhs), ("rhs", rhs)):
+            if not isinstance(value, str) or not value:
+                raise ValueError(f"conditions[{i}].{name} must be a non-empty string")
+        result.append({
+            "type": operator,
+            "parameter": [
+                {"type": "template", "key": "arg0", "value": lhs},
+                {"type": "template", "key": "arg1", "value": rhs},
+            ],
+        })
+    return result
+
+
 def _upsert_parameters(existing, updates):
     """Upsert GTM parameter dicts into ``existing`` by their ``key`` field.
 

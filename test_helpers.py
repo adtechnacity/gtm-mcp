@@ -7,6 +7,8 @@ from fastmcp_gtm_helpers import (
     _validate_consent_params,
     _build_consent_settings,
     _upsert_parameters,
+    _validate_trigger_filters,
+    _filter_tuples_to_conditions,
     MAX_BATCH_SIZE,
 )
 
@@ -224,6 +226,92 @@ class TestUpsertParameters:
                 {"key": "eventName", "type": "template", "value": "a"},
                 {"key": "eventName", "type": "template", "value": "b"},
             ])
+
+
+# ---------------------------------------------------------------------------
+# _validate_trigger_filters
+# ---------------------------------------------------------------------------
+
+class TestValidateTriggerFilters:
+    def test_empty_list_is_valid(self):
+        assert _validate_trigger_filters([]) is None
+
+    def test_valid_single_condition(self):
+        cond = [{
+            "type": "matchRegex",
+            "parameter": [
+                {"type": "template", "key": "arg0", "value": "{{Page Path}}"},
+                {"type": "template", "key": "arg1", "value": "/create"},
+            ],
+        }]
+        assert _validate_trigger_filters(cond) is None
+
+    def test_rejects_non_list(self):
+        assert "must be a list" in _validate_trigger_filters({"type": "equals"})
+
+    def test_rejects_non_dict_item(self):
+        assert "must be a dict" in _validate_trigger_filters(["not-a-dict"])
+
+    def test_rejects_missing_type(self):
+        assert "type" in _validate_trigger_filters([{"parameter": [{"key": "arg0", "value": "x", "type": "template"}]}])
+
+    def test_rejects_empty_parameter_list(self):
+        assert "parameter" in _validate_trigger_filters([{"type": "equals", "parameter": []}])
+
+    def test_rejects_parameter_missing_key(self):
+        cond = [{"type": "equals", "parameter": [{"value": "x", "type": "template"}]}]
+        assert "key/value/type" in _validate_trigger_filters(cond)
+
+
+# ---------------------------------------------------------------------------
+# _filter_tuples_to_conditions
+# ---------------------------------------------------------------------------
+
+class TestFilterTuplesToConditions:
+    def test_builds_single_condition(self):
+        result = _filter_tuples_to_conditions([
+            {"operator": "matchRegex", "lhs": "{{Page Path}}", "rhs": "/create"},
+        ])
+        assert result == [{
+            "type": "matchRegex",
+            "parameter": [
+                {"type": "template", "key": "arg0", "value": "{{Page Path}}"},
+                {"type": "template", "key": "arg1", "value": "/create"},
+            ],
+        }]
+
+    def test_builds_multiple_conditions(self):
+        result = _filter_tuples_to_conditions([
+            {"operator": "equals", "lhs": "{{utm_source}}", "rhs": "google"},
+            {"operator": "contains", "lhs": "{{Page Path}}", "rhs": "/cart"},
+        ])
+        assert len(result) == 2
+        assert result[0]["type"] == "equals"
+        assert result[1]["type"] == "contains"
+
+    def test_rejects_empty_list(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            _filter_tuples_to_conditions([])
+
+    def test_rejects_non_list(self):
+        with pytest.raises(ValueError, match="non-empty"):
+            _filter_tuples_to_conditions({"operator": "equals"})
+
+    def test_rejects_missing_operator(self):
+        with pytest.raises(ValueError, match="operator"):
+            _filter_tuples_to_conditions([{"lhs": "x", "rhs": "y"}])
+
+    def test_rejects_missing_lhs(self):
+        with pytest.raises(ValueError, match="lhs"):
+            _filter_tuples_to_conditions([{"operator": "equals", "rhs": "y"}])
+
+    def test_rejects_non_string_rhs(self):
+        with pytest.raises(ValueError, match="rhs"):
+            _filter_tuples_to_conditions([{"operator": "equals", "lhs": "x", "rhs": 123}])
+
+    def test_rejects_empty_string_value(self):
+        with pytest.raises(ValueError, match="lhs"):
+            _filter_tuples_to_conditions([{"operator": "equals", "lhs": "", "rhs": "y"}])
 
 
 # ---------------------------------------------------------------------------
