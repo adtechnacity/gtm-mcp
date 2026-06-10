@@ -4,7 +4,7 @@ An MCP server that exposes Google Tag Manager API v2 as tools for AI agents like
 
 ## Features
 
-- **18 MCP tools** covering discovery, CRUD, consent management, batch operations, and publishing
+- **33 MCP tools** covering discovery, CRUD, version history, consent management, batch operations, and publishing
 - **Service account authentication** — headless, no browser flow, works in containers
 - **Template builder** for generating GTM component JSON locally
 - **Batch operations** for bulk consent updates and variable creation
@@ -58,6 +58,7 @@ gcloud services enable tagmanager.googleapis.com --project=YOUR_PROJECT_ID
 #### Grant GTM Access
 
 Add the service account email (e.g. `gtm-mcp@YOUR_PROJECT_ID.iam.gserviceaccount.com`) as a user in GTM:
+
 - Go to GTM > Admin > Account > User Management
 - Add the service account email with **Edit** and **Publish** permissions
 
@@ -100,21 +101,31 @@ Or using the installed entry point:
 }
 ```
 
-## Available Tools (26)
+## Available Tools (33)
 
 ### Discovery
+
 - `test_gtm_connection` — Verify service account credentials
 - `list_gtm_accounts` — List all accessible GTM accounts
 - `list_gtm_containers` — List containers in an account
 - `list_gtm_workspaces` — List workspaces in a container
 
 ### Reading
+
 - `list_gtm_tags` — List all tags with consent settings
 - `list_gtm_triggers` — List all triggers with filters
 - `list_gtm_variables` — List all variables
 - `get_gtm_tag` — Get full tag details by ID
 
+### Version History
+
+- `list_gtm_container_versions` — List a container's version headers (IDs are monotonic; headers carry no timestamps — date a version via `get_gtm_container_version`)
+- `get_gtm_container_version` — Summarized snapshot of one version (entity counts, slim tag/trigger/variable listings, `fingerprint_datetime`); accepts `version_id="live"`
+- `get_gtm_live_version` — Summarized snapshot of the currently published version
+- `diff_gtm_container_versions` — Server-side field-level diff between two versions (numeric IDs or `"live"`) — added/removed/changed tags, triggers, variables, and built-in variables. Answers "what did publishing version X change"
+
 ### Creating
+
 - `create_tag` — Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.)
 - `create_trigger` — Create any GTM trigger type (customEvent, pageview, init, domReady, etc.); optional `filters` adds AND conditions
 - `create_datalayer_variable` — Create a single Data Layer Variable
@@ -122,6 +133,7 @@ Or using the installed entry point:
 - `create_js_variable` — Create a Custom JavaScript variable (type `jsm`)
 
 ### Modifying
+
 - `update_tag_consent_settings` — Set consent config for one tag
 - `update_tags_consent_settings_batch` — Set consent config for multiple tags
 - `update_tag_html` — Replace the HTML body of a Custom HTML tag
@@ -135,14 +147,17 @@ Or using the installed entry point:
 - `remove_blocking_trigger_from_tags_batch` — Detach a specific blocking trigger from multiple tags
 
 ### Deleting
+
 - `delete_tag` — Delete a tag from workspace
 - `delete_gtm_variable` — Delete a variable from workspace
 - `delete_trigger` — Delete a trigger from workspace (detach from tags first to avoid dangling references)
 
 ### Publishing
+
 - `publish_gtm_container` — Create version from workspace and publish
 
 ### Templates (Local Only)
+
 - `generate_ga4_template` — Generate GA4 tag JSON without API calls
 
 ### Updating tag parameters
@@ -160,14 +175,20 @@ Or using the installed entry point:
   "key": "eventParameters",
   "type": "list",
   "list": [
-    {"type": "map", "map": [
-      {"key": "name",  "type": "template", "value": "item_id"},
-      {"key": "value", "type": "template", "value": "{{DLV - item_id}}"}
-    ]},
-    {"type": "map", "map": [
-      {"key": "name",  "type": "template", "value": "currency"},
-      {"key": "value", "type": "template", "value": "USD"}
-    ]}
+    {
+      "type": "map",
+      "map": [
+        { "key": "name", "type": "template", "value": "item_id" },
+        { "key": "value", "type": "template", "value": "{{DLV - item_id}}" }
+      ]
+    },
+    {
+      "type": "map",
+      "map": [
+        { "key": "name", "type": "template", "value": "currency" },
+        { "key": "value", "type": "template", "value": "USD" }
+      ]
+    }
   ]
 }
 ```
@@ -212,7 +233,7 @@ update_trigger_filter(
 )
 ```
 
-List-valued fields (`filter`, `customEventFilter`, `autoEventFilter`) replace wholesale — pass `[]` to clear. Pass `None` for any *optional* key to remove it from the trigger; `name` is required by GTM and rejects `None` (omit the key to leave it unchanged). Keys not in `fields` are preserved. A missing trigger surfaces as a clear 404; a fingerprint mismatch surfaces as a 409 mentioning the workspace and trigger ID.
+List-valued fields (`filter`, `customEventFilter`, `autoEventFilter`) replace wholesale — pass `[]` to clear. Pass `None` for any _optional_ key to remove it from the trigger; `name` is required by GTM and rejects `None` (omit the key to leave it unchanged). Keys not in `fields` are preserved. A missing trigger surfaces as a clear 404; a fingerprint mismatch surfaces as a 409 mentioning the workspace and trigger ID.
 
 ## CLI Tool
 
@@ -263,8 +284,8 @@ uv run python fastmcp_gtm_server.py
 
 ```
 gtm-mcp/
-├── fastmcp_gtm_server.py      # MCP server entry point — 10 read/query tools + main()
-├── fastmcp_gtm_write_tools.py # 8 write tools (imported by server)
+├── fastmcp_gtm_server.py      # MCP server entry point — 14 read/query tools + main()
+├── fastmcp_gtm_write_tools.py # 19 write tools (imported by server)
 ├── fastmcp_gtm_helpers.py     # Shared mcp instance, GTM client, internal helpers
 ├── gtm_client_fixed.py        # GTM API client with service account auth
 ├── gtm_components.py          # Template builder (no API calls)
@@ -284,6 +305,7 @@ Uses Google Service Account credentials. Set `GOOGLE_APPLICATION_CREDENTIALS` to
 ## AI Agent Reference
 
 See [AGENTS.md](AGENTS.md) for:
+
 - Full GTM API v2 endpoint reference (105 methods across 18 resource families)
 - Implementation status of each endpoint
 - Common workflow patterns

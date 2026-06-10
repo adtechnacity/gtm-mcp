@@ -4,14 +4,14 @@
 
 Five Python files:
 
-| File | Role |
-|------|------|
-| `fastmcp_gtm_server.py` | MCP server entry point — 10 read/query tools + `main()` |
-| `fastmcp_gtm_write_tools.py` | 8 write tools (imported by server on startup) |
-| `fastmcp_gtm_helpers.py` | Shared `mcp` instance, GTM client, validation, pagination, batch helpers |
-| `gtm_client_fixed.py` | GTM API client — service account auth, wraps `google-api-python-client` |
-| `gtm_components.py` | Local template builders — no API calls, produce JSON dicts for tags/triggers/variables |
-| `cli.py` | CLI entry point — 7 read-only subcommands, prints JSON to stdout |
+| File                         | Role                                                                                   |
+| ---------------------------- | -------------------------------------------------------------------------------------- |
+| `fastmcp_gtm_server.py`      | MCP server entry point — 14 read/query tools + `main()`                                |
+| `fastmcp_gtm_write_tools.py` | 19 write tools (imported by server on startup)                                         |
+| `fastmcp_gtm_helpers.py`     | Shared `mcp` instance, GTM client, validation, pagination, batch helpers               |
+| `gtm_client_fixed.py`        | GTM API client — service account auth, wraps `google-api-python-client`                |
+| `gtm_components.py`          | Local template builders — no API calls, produce JSON dicts for tags/triggers/variables |
+| `cli.py`                     | CLI entry point — 7 read-only subcommands, prints JSON to stdout                       |
 
 ## ID Hierarchy
 
@@ -30,9 +30,9 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 
 ## Environment Variables
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `GOOGLE_APPLICATION_CREDENTIALS` | *(required)* | Path to Google service account JSON key file |
+| Variable                         | Default      | Description                                  |
+| -------------------------------- | ------------ | -------------------------------------------- |
+| `GOOGLE_APPLICATION_CREDENTIALS` | _(required)_ | Path to Google service account JSON key file |
 
 ## Auth Flow
 
@@ -41,95 +41,109 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 3. Requests scopes: `tagmanager.readonly`, `tagmanager.edit.containers`, `tagmanager.publish`
 4. Builds the `tagmanager` v2 service — no browser, no token file, fully headless
 
-## Implemented Tools (18)
+## Implemented Tools (33)
 
 ### Discovery
 
-| Tool | Description |
-|------|-------------|
+| Tool                  | Description                                                   |
+| --------------------- | ------------------------------------------------------------- |
 | `test_gtm_connection` | Verify service account credentials work by listing containers |
-| `list_gtm_accounts` | List all accessible GTM accounts |
-| `list_gtm_containers` | List containers in an account |
-| `list_gtm_workspaces` | List workspaces in a container |
+| `list_gtm_accounts`   | List all accessible GTM accounts                              |
+| `list_gtm_containers` | List containers in an account                                 |
+| `list_gtm_workspaces` | List workspaces in a container                                |
 
 ### Reading
 
-| Tool | Description |
-|------|-------------|
-| `list_gtm_tags` | List all tags with consent settings |
-| `list_gtm_triggers` | List all triggers with filters |
-| `list_gtm_variables` | List all variables |
-| `get_gtm_tag` | Get full tag details by ID |
+| Tool                 | Description                         |
+| -------------------- | ----------------------------------- |
+| `list_gtm_tags`      | List all tags with consent settings |
+| `list_gtm_triggers`  | List all triggers with filters      |
+| `list_gtm_variables` | List all variables                  |
+| `get_gtm_tag`        | Get full tag details by ID          |
+
+### Version History
+
+| Tool                          | Description                                                                                                                                       |
+| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `list_gtm_container_versions` | List a container's version headers (IDs are monotonic; no timestamps — date a version via `get_gtm_container_version`)                            |
+| `get_gtm_container_version`   | Summarized snapshot of one version (counts + slim entity listings + `fingerprint_datetime`); accepts `version_id="live"`                          |
+| `get_gtm_live_version`        | Summarized snapshot of the currently published version                                                                                            |
+| `diff_gtm_container_versions` | Server-side field-level diff between two versions (numeric IDs or `"live"`) — added/removed/changed tags, triggers, variables, built-in variables |
 
 ### Creating
 
-| Tool | Description |
-|------|-------------|
-| `create_tag` | Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.) |
-| `create_trigger` | Create any GTM trigger type (customEvent, pageview, init, domReady, etc.); optional `filters` adds AND conditions |
-| `create_datalayer_variable` | Single Data Layer Variable |
-| `create_datalayer_variables_batch` | Multiple Data Layer Variables |
-| `create_js_variable` | Custom JavaScript variable (type `jsm`) |
+| Tool                               | Description                                                                                                       |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
+| `create_tag`                       | Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.)                                          |
+| `create_trigger`                   | Create any GTM trigger type (customEvent, pageview, init, domReady, etc.); optional `filters` adds AND conditions |
+| `create_datalayer_variable`        | Single Data Layer Variable                                                                                        |
+| `create_datalayer_variables_batch` | Multiple Data Layer Variables                                                                                     |
+| `create_js_variable`               | Custom JavaScript variable (type `jsm`)                                                                           |
 
 ### Modifying
 
-| Tool | Description |
-|------|-------------|
-| `update_tag_consent_settings` | Set consent config for one tag |
-| `update_tags_consent_settings_batch` | Set consent config for multiple tags |
-| `update_tag_html` | Replace the HTML body of a Custom HTML tag |
-| `update_tag_parameters` | Upsert raw GTM `parameter` dicts on any tag by `key` (works on every tag type — GA4 event/`gaawe`, config/`gtagjs`, conversion/`awct`, etc.) |
-| `update_trigger_parameters` | Overwrite top-level fields on a trigger in place (`name`, `filter`, `customEventFilter`, `autoEventFilter`, `interval`, `limit`, `checkValidation`, `waitForTags`) — keeps trigger ID stable |
-| `update_trigger_filter` | Ergonomic wrapper to replace a trigger's filter list using `[{operator, lhs, rhs}, ...]` |
-| `add_firing_trigger_to_tags_batch` | Append a firing trigger to multiple tags |
-| `add_blocking_trigger_to_tags_batch` | Append a blocking (exception) trigger to multiple tags |
-| `set_firing_triggers_on_tags_batch` | Replace the firing-trigger list on multiple tags |
-| `remove_firing_trigger_from_tags_batch` | Detach a specific firing trigger from multiple tags |
-| `remove_blocking_trigger_from_tags_batch` | Detach a specific blocking trigger from multiple tags |
+| Tool                                      | Description                                                                                                                                                                                  |
+| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `update_tag_consent_settings`             | Set consent config for one tag                                                                                                                                                               |
+| `update_tags_consent_settings_batch`      | Set consent config for multiple tags                                                                                                                                                         |
+| `update_tag_html`                         | Replace the HTML body of a Custom HTML tag                                                                                                                                                   |
+| `update_tag_parameters`                   | Upsert raw GTM `parameter` dicts on any tag by `key` (works on every tag type — GA4 event/`gaawe`, config/`gtagjs`, conversion/`awct`, etc.)                                                 |
+| `update_trigger_parameters`               | Overwrite top-level fields on a trigger in place (`name`, `filter`, `customEventFilter`, `autoEventFilter`, `interval`, `limit`, `checkValidation`, `waitForTags`) — keeps trigger ID stable |
+| `update_trigger_filter`                   | Ergonomic wrapper to replace a trigger's filter list using `[{operator, lhs, rhs}, ...]`                                                                                                     |
+| `add_firing_trigger_to_tags_batch`        | Append a firing trigger to multiple tags                                                                                                                                                     |
+| `add_blocking_trigger_to_tags_batch`      | Append a blocking (exception) trigger to multiple tags                                                                                                                                       |
+| `set_firing_triggers_on_tags_batch`       | Replace the firing-trigger list on multiple tags                                                                                                                                             |
+| `remove_firing_trigger_from_tags_batch`   | Detach a specific firing trigger from multiple tags                                                                                                                                          |
+| `remove_blocking_trigger_from_tags_batch` | Detach a specific blocking trigger from multiple tags                                                                                                                                        |
 
 ### Deleting
 
-| Tool | Description |
-|------|-------------|
-| `delete_tag` | Delete a tag from workspace |
+| Tool                  | Description                      |
+| --------------------- | -------------------------------- |
+| `delete_tag`          | Delete a tag from workspace      |
 | `delete_gtm_variable` | Delete a variable from workspace |
-| `delete_trigger` | Delete a trigger from workspace |
+| `delete_trigger`      | Delete a trigger from workspace  |
 
 ### Publishing
 
-| Tool | Description |
-|------|-------------|
+| Tool                    | Description                                  |
+| ----------------------- | -------------------------------------------- |
 | `publish_gtm_container` | Create version from workspace and publish it |
 
 ### Templates (Local Only)
 
-| Tool | Description |
-|------|-------------|
+| Tool                    | Description                             |
+| ----------------------- | --------------------------------------- |
 | `generate_ga4_template` | Generate GA4 tag JSON without API calls |
 
 ## Common Workflow Patterns
 
 ### 1. Discovery
+
 ```
 list_gtm_accounts → list_gtm_containers(account_id) → list_gtm_workspaces(account_id, container_id)
 ```
 
 ### 2. Audit Tags
+
 ```
 list_gtm_tags(account_id, container_id) → get_gtm_tag(account_id, container_id, tag_id)
 ```
 
 ### 3. Consent Audit & Update
+
 ```
 list_gtm_tags → review consentSettings → update_tags_consent_settings_batch
 ```
 
 ### 4. Create & Publish
+
 ```
 create_tag / create_trigger / create_datalayer_variable / create_js_variable → publish_gtm_container
 ```
 
 ### 5. Trigger Migration (swap firing trigger on existing tags)
+
 ```
 create_trigger(new) → set_firing_triggers_on_tags_batch(tag_ids, [new_trigger_id])
     or
@@ -139,6 +153,7 @@ create_trigger(new) → add_firing_trigger_to_tags_batch(tag_ids, new_trigger_id
 ```
 
 ### 6. Consent-Aware Filtering (Exception / Guard Trigger)
+
 ```
 create_js_variable(is_<cohort>_source) → create_trigger(customEvent + filters on variable)
     → add_blocking_trigger_to_tags_batch(tag_ids, trigger_id)   # exception
@@ -146,214 +161,226 @@ create_js_variable(is_<cohort>_source) → create_trigger(customEvent + filters 
     → set_firing_triggers_on_tags_batch(tag_ids, [trigger_id])  # replace firing
 ```
 
+### 7. Version History / Change Audit ("what changed in version X?")
+
+```
+list_gtm_container_versions(account_id, container_id)
+    → diff_gtm_container_versions(account_id, container_id, from_version_id=X-1, to_version_id=X)
+    or
+    → diff_gtm_container_versions(account_id, container_id, from_version_id=X)  # X → live
+```
+
 ## GTM API v2 — Full Endpoint Reference
 
-The GTM API v2 has 18 resource families with ~105 methods total. This server currently implements 17 unique API methods. The table below shows implementation status.
+The GTM API v2 has 18 resource families with ~105 methods total. This server currently implements 20 unique API methods. The table below shows implementation status.
 
 ### accounts
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `accounts.list` | Yes | `list_gtm_accounts` |
-| `accounts.get` | No | — |
-| `accounts.update` | No | — |
+| Method            | Implemented | Tool                |
+| ----------------- | ----------- | ------------------- |
+| `accounts.list`   | Yes         | `list_gtm_accounts` |
+| `accounts.get`    | No          | —                   |
+| `accounts.update` | No          | —                   |
 
 ### accounts.containers
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `containers.list` | Yes | `list_gtm_containers`, `test_gtm_connection` |
-| `containers.get` | Yes | (in `gtm_client_fixed.py` only) |
-| `containers.create` | No | — |
-| `containers.update` | No | — |
-| `containers.delete` | No | — |
-| `containers.combine` | No | — |
-| `containers.lookup` | No | — |
-| `containers.move_tag_id` | No | — |
-| `containers.snippet` | No | — |
+| Method                   | Implemented | Tool                                         |
+| ------------------------ | ----------- | -------------------------------------------- |
+| `containers.list`        | Yes         | `list_gtm_containers`, `test_gtm_connection` |
+| `containers.get`         | Yes         | (in `gtm_client_fixed.py` only)              |
+| `containers.create`      | No          | —                                            |
+| `containers.update`      | No          | —                                            |
+| `containers.delete`      | No          | —                                            |
+| `containers.combine`     | No          | —                                            |
+| `containers.lookup`      | No          | —                                            |
+| `containers.move_tag_id` | No          | —                                            |
+| `containers.snippet`     | No          | —                                            |
 
 ### accounts.containers.workspaces
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `workspaces.list` | Yes | `list_gtm_workspaces` |
-| `workspaces.get` | No | — |
-| `workspaces.create` | No | — |
-| `workspaces.update` | No | — |
-| `workspaces.delete` | No | — |
-| `workspaces.sync` | No | — |
-| `workspaces.resolve_conflict` | No | — |
-| `workspaces.quick_preview` | No | — |
-| `workspaces.create_version` | Yes | `publish_gtm_container` (internal step) |
-| `workspaces.getStatus` | No | — |
+| Method                        | Implemented | Tool                                    |
+| ----------------------------- | ----------- | --------------------------------------- |
+| `workspaces.list`             | Yes         | `list_gtm_workspaces`                   |
+| `workspaces.get`              | No          | —                                       |
+| `workspaces.create`           | No          | —                                       |
+| `workspaces.update`           | No          | —                                       |
+| `workspaces.delete`           | No          | —                                       |
+| `workspaces.sync`             | No          | —                                       |
+| `workspaces.resolve_conflict` | No          | —                                       |
+| `workspaces.quick_preview`    | No          | —                                       |
+| `workspaces.create_version`   | Yes         | `publish_gtm_container` (internal step) |
+| `workspaces.getStatus`        | No          | —                                       |
 
 ### accounts.containers.workspaces.tags
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `tags.list` | Yes | `list_gtm_tags` |
-| `tags.get` | Yes | `get_gtm_tag` |
-| `tags.create` | Yes | `create_tag` |
-| `tags.update` | Yes | `update_tag_consent_settings`, `update_tags_consent_settings_batch`, `update_tag_html`, `add_firing_trigger_to_tags_batch`, `add_blocking_trigger_to_tags_batch`, `set_firing_triggers_on_tags_batch`, `remove_firing_trigger_from_tags_batch`, `remove_blocking_trigger_from_tags_batch` |
-| `tags.delete` | Yes | `delete_tag` |
-| `tags.revert` | No | — |
+| Method        | Implemented | Tool                                                                                                                                                                                                                                                                                      |
+| ------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tags.list`   | Yes         | `list_gtm_tags`                                                                                                                                                                                                                                                                           |
+| `tags.get`    | Yes         | `get_gtm_tag`                                                                                                                                                                                                                                                                             |
+| `tags.create` | Yes         | `create_tag`                                                                                                                                                                                                                                                                              |
+| `tags.update` | Yes         | `update_tag_consent_settings`, `update_tags_consent_settings_batch`, `update_tag_html`, `add_firing_trigger_to_tags_batch`, `add_blocking_trigger_to_tags_batch`, `set_firing_triggers_on_tags_batch`, `remove_firing_trigger_from_tags_batch`, `remove_blocking_trigger_from_tags_batch` |
+| `tags.delete` | Yes         | `delete_tag`                                                                                                                                                                                                                                                                              |
+| `tags.revert` | No          | —                                                                                                                                                                                                                                                                                         |
 
 ### accounts.containers.workspaces.triggers
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `triggers.list` | Yes | `list_gtm_triggers` |
-| `triggers.get` | Yes | (internal — used by `update_trigger_parameters`) |
-| `triggers.create` | Yes | `create_trigger` |
-| `triggers.update` | Yes | `update_trigger_parameters`, `update_trigger_filter` |
-| `triggers.delete` | Yes | `delete_trigger` |
-| `triggers.revert` | No | — |
+| Method            | Implemented | Tool                                                 |
+| ----------------- | ----------- | ---------------------------------------------------- |
+| `triggers.list`   | Yes         | `list_gtm_triggers`                                  |
+| `triggers.get`    | Yes         | (internal — used by `update_trigger_parameters`)     |
+| `triggers.create` | Yes         | `create_trigger`                                     |
+| `triggers.update` | Yes         | `update_trigger_parameters`, `update_trigger_filter` |
+| `triggers.delete` | Yes         | `delete_trigger`                                     |
+| `triggers.revert` | No          | —                                                    |
 
 ### accounts.containers.workspaces.variables
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `variables.list` | Yes | `list_gtm_variables` |
-| `variables.get` | No | — |
-| `variables.create` | Yes | `create_datalayer_variable`, `create_datalayer_variables_batch`, `create_js_variable` |
-| `variables.update` | No | — |
-| `variables.delete` | Yes | `delete_gtm_variable` |
-| `variables.revert` | No | — |
+| Method             | Implemented | Tool                                                                                  |
+| ------------------ | ----------- | ------------------------------------------------------------------------------------- |
+| `variables.list`   | Yes         | `list_gtm_variables`                                                                  |
+| `variables.get`    | No          | —                                                                                     |
+| `variables.create` | Yes         | `create_datalayer_variable`, `create_datalayer_variables_batch`, `create_js_variable` |
+| `variables.update` | No          | —                                                                                     |
+| `variables.delete` | Yes         | `delete_gtm_variable`                                                                 |
+| `variables.revert` | No          | —                                                                                     |
 
 ### accounts.containers.versions
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `versions.publish` | Yes | `publish_gtm_container` |
-| `versions.list` | No | — |
-| `versions.get` | No | — |
-| `versions.update` | No | — |
-| `versions.delete` | No | — |
-| `versions.set_latest` | No | — |
-| `versions.undelete` | No | — |
-| `versions.live` | No | — |
+| Method                | Implemented | Tool                                                                                               |
+| --------------------- | ----------- | -------------------------------------------------------------------------------------------------- |
+| `versions.publish`    | Yes         | `publish_gtm_container`                                                                            |
+| `versions.list`       | No          | —                                                                                                  |
+| `versions.get`        | Yes         | `get_gtm_container_version`, `diff_gtm_container_versions`                                         |
+| `versions.update`     | No          | —                                                                                                  |
+| `versions.delete`     | No          | —                                                                                                  |
+| `versions.set_latest` | No          | —                                                                                                  |
+| `versions.undelete`   | No          | —                                                                                                  |
+| `versions.live`       | Yes         | `get_gtm_live_version`, `get_gtm_container_version` / `diff_gtm_container_versions` (via `"live"`) |
 
 ### accounts.containers.version_headers
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `version_headers.list` | No | — |
-| `version_headers.latest` | No | — |
+| Method                   | Implemented | Tool                          |
+| ------------------------ | ----------- | ----------------------------- |
+| `version_headers.list`   | Yes         | `list_gtm_container_versions` |
+| `version_headers.latest` | No          | —                             |
 
 ### accounts.containers.environments
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `environments.list` | No | — |
-| `environments.get` | No | — |
-| `environments.create` | No | — |
-| `environments.update` | No | — |
-| `environments.delete` | No | — |
-| `environments.reauthorize` | No | — |
+| Method                     | Implemented | Tool |
+| -------------------------- | ----------- | ---- |
+| `environments.list`        | No          | —    |
+| `environments.get`         | No          | —    |
+| `environments.create`      | No          | —    |
+| `environments.update`      | No          | —    |
+| `environments.delete`      | No          | —    |
+| `environments.reauthorize` | No          | —    |
 
 ### accounts.containers.workspaces.folders
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `folders.list` | No | — |
-| `folders.get` | No | — |
-| `folders.create` | No | — |
-| `folders.update` | No | — |
-| `folders.delete` | No | — |
-| `folders.entities` | No | — |
-| `folders.move_entities_to_folder` | No | — |
-| `folders.revert` | No | — |
+| Method                            | Implemented | Tool |
+| --------------------------------- | ----------- | ---- |
+| `folders.list`                    | No          | —    |
+| `folders.get`                     | No          | —    |
+| `folders.create`                  | No          | —    |
+| `folders.update`                  | No          | —    |
+| `folders.delete`                  | No          | —    |
+| `folders.entities`                | No          | —    |
+| `folders.move_entities_to_folder` | No          | —    |
+| `folders.revert`                  | No          | —    |
 
 ### accounts.containers.workspaces.built_in_variables
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `built_in_variables.list` | No | — |
-| `built_in_variables.create` | No | — |
-| `built_in_variables.delete` | No | — |
-| `built_in_variables.revert` | No | — |
+| Method                      | Implemented | Tool |
+| --------------------------- | ----------- | ---- |
+| `built_in_variables.list`   | No          | —    |
+| `built_in_variables.create` | No          | —    |
+| `built_in_variables.delete` | No          | —    |
+| `built_in_variables.revert` | No          | —    |
 
 ### accounts.containers.workspaces.zones
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `zones.list` | No | — |
-| `zones.get` | No | — |
-| `zones.create` | No | — |
-| `zones.update` | No | — |
-| `zones.delete` | No | — |
-| `zones.revert` | No | — |
+| Method         | Implemented | Tool |
+| -------------- | ----------- | ---- |
+| `zones.list`   | No          | —    |
+| `zones.get`    | No          | —    |
+| `zones.create` | No          | —    |
+| `zones.update` | No          | —    |
+| `zones.delete` | No          | —    |
+| `zones.revert` | No          | —    |
 
 ### accounts.containers.workspaces.templates
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `templates.list` | No | — |
-| `templates.get` | No | — |
-| `templates.create` | No | — |
-| `templates.update` | No | — |
-| `templates.delete` | No | — |
-| `templates.revert` | No | — |
+| Method             | Implemented | Tool |
+| ------------------ | ----------- | ---- |
+| `templates.list`   | No          | —    |
+| `templates.get`    | No          | —    |
+| `templates.create` | No          | —    |
+| `templates.update` | No          | —    |
+| `templates.delete` | No          | —    |
+| `templates.revert` | No          | —    |
 
 ### accounts.containers.workspaces.transformations
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `transformations.list` | No | — |
-| `transformations.get` | No | — |
-| `transformations.create` | No | — |
-| `transformations.update` | No | — |
-| `transformations.delete` | No | — |
-| `transformations.revert` | No | — |
+| Method                   | Implemented | Tool |
+| ------------------------ | ----------- | ---- |
+| `transformations.list`   | No          | —    |
+| `transformations.get`    | No          | —    |
+| `transformations.create` | No          | —    |
+| `transformations.update` | No          | —    |
+| `transformations.delete` | No          | —    |
+| `transformations.revert` | No          | —    |
 
 ### accounts.containers.workspaces.clients
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `clients.list` | No | — |
-| `clients.get` | No | — |
-| `clients.create` | No | — |
-| `clients.update` | No | — |
-| `clients.delete` | No | — |
-| `clients.revert` | No | — |
+| Method           | Implemented | Tool |
+| ---------------- | ----------- | ---- |
+| `clients.list`   | No          | —    |
+| `clients.get`    | No          | —    |
+| `clients.create` | No          | —    |
+| `clients.update` | No          | —    |
+| `clients.delete` | No          | —    |
+| `clients.revert` | No          | —    |
 
 ### accounts.containers.workspaces.gtag_config
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `gtag_config.list` | No | — |
-| `gtag_config.get` | No | — |
-| `gtag_config.create` | No | — |
-| `gtag_config.update` | No | — |
-| `gtag_config.delete` | No | — |
+| Method               | Implemented | Tool |
+| -------------------- | ----------- | ---- |
+| `gtag_config.list`   | No          | —    |
+| `gtag_config.get`    | No          | —    |
+| `gtag_config.create` | No          | —    |
+| `gtag_config.update` | No          | —    |
+| `gtag_config.delete` | No          | —    |
 
 ### accounts.user_permissions
 
-| Method | Implemented | Tool |
-|--------|-------------|------|
-| `user_permissions.list` | No | — |
-| `user_permissions.get` | No | — |
-| `user_permissions.create` | No | — |
-| `user_permissions.update` | No | — |
-| `user_permissions.delete` | No | — |
+| Method                    | Implemented | Tool |
+| ------------------------- | ----------- | ---- |
+| `user_permissions.list`   | No          | —    |
+| `user_permissions.get`    | No          | —    |
+| `user_permissions.create` | No          | —    |
+| `user_permissions.update` | No          | —    |
+| `user_permissions.delete` | No          | —    |
 
 ## Priority for Future Implementation
 
 ### High — Complete CRUD on core resources
+
 - `tags.revert`
 - `triggers.revert`
 - `variables.get`, `variables.update`
 - `workspaces.create`, `workspaces.get`
 
 ### Medium — Environments, versions, folders
+
 - `environments.list`, `environments.create`
-- `versions.list`, `versions.get`, `versions.live`
-- `version_headers.list`, `version_headers.latest`
+- `versions.list`
+- `version_headers.latest`
 - `folders.list`, `folders.create`, `folders.entities`
 - `built_in_variables.list`, `built_in_variables.create`
 - `workspaces.sync`, `workspaces.getStatus`
 
 ### Low — Advanced features
+
 - `templates.*` (custom tag templates)
 - `zones.*` (tag firing zones)
 - `transformations.*` (server-side transformations)
