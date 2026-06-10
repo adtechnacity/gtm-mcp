@@ -2,9 +2,10 @@
 """
 FastMCP GTM Server — MCP server exposing Google Tag Manager API v2 as tools.
 
-Provides 18 tools for managing GTM accounts, containers, workspaces, tags,
-triggers, variables, consent settings, and publishing. Uses Google Service
-Account credentials via gtm_client_fixed.GTMClient for authentication.
+Provides 33 tools for managing GTM accounts, containers, workspaces, tags,
+triggers, variables, version history, consent settings, and publishing. Uses
+Google Service Account credentials via gtm_client_fixed.GTMClient for
+authentication.
 
 Read tools are defined here; write tools are in fastmcp_gtm_write_tools.
 Shared helpers live in fastmcp_gtm_helpers.
@@ -26,6 +27,7 @@ from fastmcp_gtm_helpers import (
     mcp, get_gtm_client, _run, logger,
     HAS_GTM_COMPONENTS,
     _validate_ids, _paginated_list, _resolve_workspace_parent,
+    _fingerprint_to_iso, _summarize_version, _diff_versions,
 )
 
 try:
@@ -369,6 +371,197 @@ async def list_gtm_triggers(account_id: str, container_id: str, workspace_id: st
         return {
             "status": "error",
             "message": f"Failed to list triggers: {str(e)}"
+        }
+
+
+# ---------------------------------------------------------------------------
+# Version history tools
+# ---------------------------------------------------------------------------
+
+async def _fetch_version(client, account_id: str, container_id: str, version_id: str) -> dict:
+    """Fetch a raw ContainerVersion — a numeric version_id or the special "live"."""
+    parent = f"accounts/{account_id}/containers/{container_id}"
+    if version_id == "live":
+        return await _run(client.service.accounts().containers().versions().live(parent=parent))
+    return await _run(client.service.accounts().containers().versions().get(
+        path=f"{parent}/versions/{version_id}"
+    ))
+
+
+def _validate_version_id(name: str, version_id: str):
+    """Validate a version_id parameter that also accepts the special value "live"."""
+    if version_id == "live":
+        return None
+    return _validate_ids(**{name: version_id})
+
+
+async def _get_version_summary(account_id: str, container_id: str, version_id: str) -> dict:
+    """Shared fetch+summarize path for get_gtm_container_version / get_gtm_live_version."""
+    error = _validate_ids(account_id=account_id, container_id=container_id)
+    if error:
+        return {"status": "error", "message": error}
+    error = _validate_version_id("version_id", version_id)
+    if error:
+        return {"status": "error", "message": error}
+
+    client = get_gtm_client()
+    version = await _fetch_version(client, account_id, container_id, version_id)
+
+    return {
+        "status": "success",
+        "version": _summarize_version(version)
+    }
+
+
+@mcp.tool()
+async def list_gtm_container_versions(account_id: str, container_id: str, include_deleted: bool = False) -> dict:
+    """List all container version headers (the container's publish history).
+
+    Calls tagmanager.accounts.containers.version_headers.list.
+    Returns each version's ID, name, entity counts, and deleted flag. Version
+    IDs are monotonically increasing — higher ID means created later. Headers
+    carry no timestamps; use get_gtm_container_version and read
+    fingerprint_datetime to date a specific version.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        include_deleted: Also include deleted versions (default False)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        parent = f"accounts/{account_id}/containers/{container_id}"
+
+        headers = await _paginated_list(
+            lambda **kw: client.service.accounts().containers().version_headers().list(
+                parent=parent, includeDeleted=include_deleted, **kw),
+            'containerVersionHeader'
+        )
+
+        return {
+            "status": "success",
+            "total_versions": len(headers),
+            "versions": [
+                {
+                    "containerVersionId": h.get('containerVersionId'),
+                    "name": h.get('name'),
+                    "numTags": h.get('numTags'),
+                    "numTriggers": h.get('numTriggers'),
+                    "numVariables": h.get('numVariables'),
+                    "deleted": h.get('deleted', False)
+                }
+                for h in headers
+            ]
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to list container versions: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def get_gtm_container_version(account_id: str, container_id: str, version_id: str) -> dict:
+    """Get a summarized snapshot of a specific GTM container version.
+
+    Calls tagmanager.accounts.containers.versions.get (or versions.live when
+    version_id is "live"). Returns identity fields, entity counts, and slim
+    tag/trigger/variable listings — never the raw resource, which exceeds 200KB
+    on large containers. fingerprint_datetime (ISO 8601 UTC, derived from the
+    version's fingerprint) is effectively the version's creation time.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        version_id: Container version ID, or "live" for the published version
+    """
+    try:
+        return await _get_version_summary(account_id, container_id, version_id)
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to get container version: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def get_gtm_live_version(account_id: str, container_id: str) -> dict:
+    """Get a summarized snapshot of the currently published (live) container version.
+
+    Calls tagmanager.accounts.containers.versions.live. Same summary shape as
+    get_gtm_container_version: identity fields, entity counts, slim
+    tag/trigger/variable listings, and fingerprint_datetime (publish-time
+    storage timestamp, ISO 8601 UTC).
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+    """
+    try:
+        return await _get_version_summary(account_id, container_id, "live")
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to get live version: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def diff_gtm_container_versions(account_id: str, container_id: str, from_version_id: str, to_version_id: str = "live") -> dict:
+    """Diff two GTM container versions field-by-field, server-side.
+
+    Calls tagmanager.accounts.containers.versions.get for each side (or
+    versions.live for the special value "live"). Answers "what did publishing
+    version X change" — diff X-1 → X, or X → live to see what changed since.
+    Returns added/removed/changed tags, triggers, and variables (changed
+    entries carry per-field change lists with GTM parameter lists matched by
+    key), plus added/removed built-in variables and summary counts. Long
+    string values are truncated at 300 chars; per-entity change lists are
+    capped at 40 entries.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        from_version_id: Baseline version ID, or "live"
+        to_version_id: Target version ID, or "live" (default)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id)
+        if error:
+            return {"status": "error", "message": error}
+        for name, version_id in (("from_version_id", from_version_id), ("to_version_id", to_version_id)):
+            error = _validate_version_id(name, version_id)
+            if error:
+                return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        # Sequential on purpose: the googleapiclient service shares one
+        # httplib2.Http, which is not thread-safe — concurrent _run calls
+        # (asyncio.to_thread) could interleave on the same socket.
+        from_version = await _fetch_version(client, account_id, container_id, from_version_id)
+        to_version = await _fetch_version(client, account_id, container_id, to_version_id)
+
+        def identity(version):
+            return {
+                "containerVersionId": version.get("containerVersionId"),
+                "name": version.get("name"),
+                "fingerprint_datetime": _fingerprint_to_iso(version.get("fingerprint")),
+            }
+
+        return {
+            "status": "success",
+            "from": identity(from_version),
+            "to": identity(to_version),
+            **_diff_versions(from_version, to_version)
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to diff container versions: {str(e)}"
         }
 
 

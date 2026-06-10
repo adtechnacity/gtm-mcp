@@ -1,8 +1,19 @@
 # Changelog
 
+## [0.5.0] - 2026-06-10
+
+### Added
+
+- `list_gtm_container_versions` tool — list a container's version headers (tagmanager.accounts.containers.version_headers.list), with `include_deleted` support. Version IDs are monotonically increasing; headers carry no timestamps, so use `get_gtm_container_version` to date one.
+- `get_gtm_container_version` tool — fetch a single container version (tagmanager.accounts.containers.versions.get; accepts `version_id="live"` → versions.live) and return a summarized snapshot — identity fields, entity counts, slim tag/trigger/variable listings — never the raw resource, which exceeds 200KB on large containers. Includes `fingerprint_datetime`, ISO 8601 UTC derived from the version fingerprint (effectively its creation time).
+- `get_gtm_live_version` tool — fetch the currently published version (tagmanager.accounts.containers.versions.live); thin wrapper sharing `get_gtm_container_version`'s fetch+summarize path.
+- `diff_gtm_container_versions` tool — server-side field-level diff between two container versions (each side accepts a numeric ID or `"live"`). Answers "what did publishing version X change" — diff X-1 → X, or X → live. Reports added/removed/changed tags, triggers, and variables (per-field change lists with GTM `parameter` lists matched by `key`), plus added/removed built-in variables and summary counts. String values truncate at 300 chars; per-entity change lists cap at 40 entries with a `_truncated` marker.
+- `_fingerprint_to_iso`, `_summarize_version`, `_diff_entity_dicts`, and `_diff_versions` pure helpers in `fastmcp_gtm_helpers`; covered by 47 new unit tests.
+
 ## [0.4.0] - 2026-05-21
 
 ### Added
+
 - `update_trigger_parameters` tool — overwrite top-level fields on a trigger in place (the trigger-side mirror of `update_tag_parameters`). Avoids the delete-and-recreate dance that shuffles trigger IDs and breaks every consuming tag's `firingTriggerId` list. Allowed keys: `name`, `filter`, `customEventFilter`, `autoEventFilter`, `interval`, `limit`, `checkValidation`, `waitForTags`. List-valued fields replace wholesale (pass `[]` to clear); `None` removes any optional key (rejected for the required `name` field). Uses fingerprint concurrency; surfaces 404 (missing trigger) and 409 (fingerprint conflict) with workspace + trigger context in the message.
 - `update_trigger_filter` tool — ergonomic wrapper that takes `[{operator, lhs, rhs}, ...]` and constructs the underlying GTM Condition dicts. Picks which list to replace via `target` (`filter` / `customEventFilter` / `autoEventFilter`).
 - `_validate_trigger_filters` and `_filter_tuples_to_conditions` helpers in `fastmcp_gtm_helpers` (the former moved out of `fastmcp_gtm_write_tools` so both modules share one implementation); covered by 14 new unit tests.
@@ -10,20 +21,24 @@
 ## [0.3.0] - 2026-05-01
 
 ### Added
+
 - `update_tag_parameters` tool — upsert raw GTM `parameter` dicts on any tag by `key`, leaving other parameters untouched. Works on every tag type (GA4 event/`gaawe`, GA4 config/`gtagjs`, conversion/`awct`, etc.) and unblocks edits like adding `eventParameters`, `userProperties`, or `measurementIdOverride` without recreating the tag. Uses fingerprint concurrency.
 - `_upsert_parameters` helper in `fastmcp_gtm_helpers` — pure function with input validation (missing key/type, duplicate keys) and non-mutating semantics (deep-copies inserted items so the returned list is independent of caller refs); covered by 13 unit tests.
 
 ## [0.2.1] - 2026-04-20
 
 ### Added
+
 - `delete_tag` tool — delete a tag from a workspace (tagmanager.accounts.containers.workspaces.tags.delete)
 
 ### Changed
+
 - AGENTS.md capability matrix marks `tags.delete` as implemented; stale `tags.delete` / `triggers.delete` entries removed from the Future Implementation priority list
 
 ## [0.2.0] - 2026-04-17
 
 ### Added
+
 - `create_js_variable` tool — create a Custom JavaScript variable (type `jsm`)
 - `update_tag_html` tool — replace the HTML body of a Custom HTML tag (guards on `type == "html"`, uses fingerprint concurrency)
 - `delete_trigger` tool — delete a trigger from a workspace
@@ -35,22 +50,26 @@
 - `create_trigger` accepts optional `filters` — additional GTM Condition dicts AND-ed with the trigger's base match (maps to the trigger body's `filter` field)
 
 ### Changed
+
 - `create_trigger` validates `trigger_type` against the supported set and `filters` shape client-side (each entry must be `{type: str, parameter: [{key, value, type}, ...]}`)
 - `create_trigger` no longer requires `event_name` except when `trigger_type == "customEvent"`
 - `add_firing_trigger_to_tags_batch`, `add_blocking_trigger_to_tags_batch`, `set_firing_triggers_on_tags_batch`, `remove_firing_trigger_from_tags_batch`, and `remove_blocking_trigger_from_tags_batch` share helpers in `fastmcp_gtm_helpers` (`_append_trigger_to_tags_batch`, `_remove_trigger_from_tags_batch`, `_set_triggers_on_tags_batch`) on top of the existing `_batch_update_tags` primitive
 
 ### Fixed
+
 - Data Layer Variable creation now sends `dataLayerVersion` as `integer` and `setDefaultValue` as `boolean`, matching the GTM Parameter schema (previously sent as `template`, which GTM tolerated but misrepresented)
 
 ## [0.1.1] - 2026-03-04
 
 ### Fixed
+
 - Auto-resolve GTM workspace ID instead of defaulting to "1" — the GTM API silently returns empty arrays for non-existent workspace IDs, causing `list_gtm_tags`, `list_gtm_variables`, and `list_gtm_triggers` to appear to work but return no results
 - Validate explicitly-provided `workspace_id` values (must be numeric)
 - Cache resolved workspace IDs per (account, container) pair to avoid repeated API calls
 - Cache fallback paths now correctly store results to prevent redundant API calls
 
 ### Security
+
 - Validate batch `tag_ids` in `_batch_update_tags` to prevent non-numeric IDs in API paths
 - Validate batch `variables` list items have required `name` and `key` fields
 - Add input validation to CLI arguments (`account_id`, `container_id`, `workspace_id`, `tag_id`)
@@ -59,6 +78,7 @@
 ## [0.1.0] - 2026-03-04
 
 ### Added
+
 - Generic `create_tag` tool supporting any GTM tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.) with full GTM API v2 Tag resource fields
 - Input validation on all 18 tools — numeric-only GTM IDs prevent cross-account path traversal
 - Pagination support for all list tools — no more silently truncated results
@@ -74,11 +94,13 @@
 - Service account authentication (headless, no browser flow)
 
 ### Changed
+
 - Split monolithic server into 3 modules: `fastmcp_gtm_helpers.py`, `fastmcp_gtm_server.py`, `fastmcp_gtm_write_tools.py`
 - Made MCP vendor-agnostic — removed hardcoded GA4/Facebook Pixel/ecommerce setup tools in favor of generic `create_tag`
 - Tightened dependency bounds: `mcp>=1.23.0` (CVE fixes), `google-api-python-client>=2.100.0`
 
 ### Fixed
+
 - Custom event trigger template used `{{Event}}` instead of correct `{{_event}}` built-in variable
 - `GTMClient.create_trigger` put filters under `filter` instead of `customEventFilter`
 - `_run()` helper now returns `{}` on None API responses instead of crashing
@@ -86,6 +108,7 @@
 - `publish_version` response filtered to prevent metadata leakage
 
 ### Security
+
 - All GTM ID parameters validated as numeric-only strings
 - Batch operations capped at 50 items to prevent resource exhaustion
 - Sanitized credential path logging
