@@ -2,7 +2,22 @@
 
 **Date:** 2026-07-22
 **Container:** cos-tags (`GTM-T94N4TKG`, account `1265057312`, container `230044048`)
-**Status:** Design approved; to be built staged in a new workspace, **not published** without explicit go-ahead.
+**Status:** Built (staged, **not published**) — see "As-built" below.
+
+## As-built (2026-07-22)
+
+The gtm MCP server cannot create a new workspace, nor URL-type (`u`) variables — only Data Layer variables. To stay behavior-identical without those primitives, the implementation was adapted:
+
+- **No `qs_ds` / `qs_lp` / `qs_mtpt` / `qs_params` variables created.** All query-string reading happens **inside the tag** JS (`window.location.search`).
+- **Gate** is done at the **trigger** via the built-in `{{Page URL}}` (`contains` `mtpt=true`) instead of a `{{qs_mtpt}}` variable.
+- Built in the **Default Workspace `114`** (no dedicated workspace possible via API). Unpublished = draft.
+- Reused existing variables `{{cid}}` (id 11) and `{{TRACKING_BASE}}` (id 358).
+
+Created objects (workspace 114):
+- Trigger **505** — "MTPT Parallel Tracking - mtpt=true" (Page View, filter `{{Page URL}}` contains `mtpt=true`).
+- Tag **506** — "MavenTrack - Parallel Tracking" (Custom HTML, `oncePerLoad`, consent `notSet`, firing trigger 505).
+
+Behavior matches the design below; only the variable/workspace mechanics differ.
 
 ## Goal
 
@@ -63,7 +78,7 @@ function() {
 - Firing trigger: the new `mtpt=true` Page View trigger.
 - No blocking trigger (cos-tags has no EU/dev block equivalent).
 
-Tag body:
+Tag body (as-built — reads query params in-tag instead of via `{{qs_*}}` variables):
 ```html
 <script>
 (function() {
@@ -73,9 +88,16 @@ Tag body:
     return val && val !== "undefined" && val !== "null" && val.indexOf(openBrace) === -1;
   };
 
+  var qp = function(name) {
+    try {
+      var m = new RegExp('[?&]' + name + '=([^&#]*)').exec(window.location.search);
+      return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')) : '';
+    } catch (e) { return ''; }
+  };
+
   try {
-    var ds = "{{qs_ds}}";
-    var lp = "{{qs_lp}}";
+    var ds = qp('ds');
+    var lp = qp('lp');
     var cid = "{{cid}}";
 
     if (!isValid(ds) || !isValid(lp)) {
@@ -86,7 +108,7 @@ Tag body:
     var baseUrl = "{{TRACKING_BASE}}";
     if (!isValid(baseUrl)) return;   // guard: TRACKING_BASE can resolve empty per-site
 
-    var allParams = "{{qs_params}}";
+    var allParams = window.location.search ? window.location.search.substring(1) : '';
     var pixelUrl = baseUrl + '/' + ds + '/' + lp + '?pt=1';
     if (isValid(cid)) pixelUrl += '&cid=' + encodeURIComponent(cid);
     if (allParams && allParams.indexOf(openBrace) === -1) pixelUrl += '&' + allParams;
