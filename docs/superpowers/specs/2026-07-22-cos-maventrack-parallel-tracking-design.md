@@ -4,20 +4,58 @@
 **Container:** cos-tags (`GTM-T94N4TKG`, account `1265057312`, container `230044048`)
 **Status:** Built (staged, **not published**) — see "As-built" below.
 
-## As-built (2026-07-22)
+## As-built (2026-07-22, revised — callcenter-style)
 
-The gtm MCP server cannot create a new workspace, nor URL-type (`u`) variables — only Data Layer variables. To stay behavior-identical without those primitives, the implementation was adapted:
+Per Rob's feedback, the tag was rewritten to match the **callcenter "MT Redirect URL Pixel" (tag 35)** structure, which is cleaner: it delegates URL construction to the shared MavenScripts helper `window.buildCTALinks` instead of hand-building the URL string. This removed the `String.fromCharCode(123,123)` unresolved-template hack, the manual query-string regex, and the manual `cid`/params concatenation.
 
-- **No `qs_ds` / `qs_lp` / `qs_mtpt` / `qs_params` variables created.** All query-string reading happens **inside the tag** JS (`window.location.search`).
-- **Gate** is done at the **trigger** via the built-in `{{Page URL}}` (`contains` `mtpt=true`) instead of a `{{qs_mtpt}}` variable.
-- Built in the **Default Workspace `114`** (no dedicated workspace possible via API). Unpublished = draft.
-- Reused existing variables `{{cid}}` (id 11) and `{{TRACKING_BASE}}` (id 358).
-
-Created objects (workspace 114):
+Created objects (Default Workspace `114`, unpublished = draft):
+- Variable **507** — `ds` (Custom JS): reads `ds` from `location.search`, default `81`.
+- Variable **508** — `lp` (Custom JS): reads `lp` from `location.search`, default `18383`.
 - Trigger **505** — "MTPT Parallel Tracking - mtpt=true" (Page View, filter `{{Page URL}}` contains `mtpt=true`).
 - Tag **506** — "MavenTrack - Parallel Tracking" (Custom HTML, `oncePerLoad`, consent `notSet`, firing trigger 505).
 
-Behavior matches the design below; only the variable/workspace mechanics differ.
+Reused existing variables: `{{TRACKING_BASE}}` (id 358) and `{{utm_source}}` (id 116).
+
+Key constraints / decisions:
+- The gtm MCP **cannot create a workspace or URL-type (`u`) variables**. So `ds`/`lp` were created as **Custom JS** variables (with the 81/18383 default baked into the variable) via the `gtm-create-jsm-variable` skill, and the `mtpt=true` gate uses the built-in `{{Page URL}}` at the trigger instead of a `{{qs_mtpt}}` variable.
+- **Dependency accepted (approved):** the callcenter style depends on MavenScripts (`buildCTALinks`/`getDeviceInfo`/`getBrowserName`). If MavenScripts is not loaded on a site, the `setTimeout` poll retries indefinitely and the pixel never fires. Acceptable because MavenScripts is enabled where `mtpt` traffic lands.
+- `cid` is no longer read explicitly — `appendQueryString: true` forwards the entire inbound query string (including `cid`, `fbclid`, etc.) automatically.
+
+As-built tag body:
+```html
+<script type="text/javascript">
+function fire_mtpt_pixel() {
+  if (typeof window.buildCTALinks === 'function' &&
+      typeof window.getDeviceInfo === 'function' &&
+      typeof window.getBrowserName === 'function') {
+
+    var links = window.buildCTALinks({
+      context: window.getDeviceInfo(),
+      browser: window.getBrowserName().toLowerCase(),
+      queryString: window.location.search,
+      appendQueryString: true,
+      sourceLinks: {
+        default: "{{TRACKING_BASE}}/{{ds}}/{{lp}}?pt=1"
+      },
+      utmSource: "{{utm_source}}"
+    });
+
+    var pixel = document.createElement("img");
+    pixel.src = links.default;
+    pixel.width = 1;
+    pixel.height = 1;
+    pixel.style.position = "absolute";
+    pixel.style.opacity = "0";
+    document.body.appendChild(pixel);
+  } else {
+    setTimeout(fire_mtpt_pixel, 200);
+  }
+}
+fire_mtpt_pixel();
+</script>
+```
+
+The original design below (manual URL build, in-tag query parsing) is kept for historical context; the callcenter-style version above supersedes it.
 
 ## Goal
 
