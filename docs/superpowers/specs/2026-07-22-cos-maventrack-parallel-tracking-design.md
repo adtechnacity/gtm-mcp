@@ -9,15 +9,17 @@
 Per Rob's feedback, the tag was rewritten to match the **callcenter "MT Redirect URL Pixel" (tag 35)** structure, which is cleaner: it delegates URL construction to the shared MavenScripts helper `window.buildCTALinks` instead of hand-building the URL string. This removed the `String.fromCharCode(123,123)` unresolved-template hack, the manual query-string regex, and the manual `cid`/params concatenation.
 
 Created objects (Default Workspace `114`, unpublished = draft):
-- Variable **507** — `ds` (Custom JS): reads `ds` from `location.search`, default `81`.
-- Variable **508** — `lp` (Custom JS): reads `lp` from `location.search`, default `18383`.
+- Variable **507** — `ds` (**URL** variable): Component `URL` / Query, Query Key `ds`, **default value `81`**.
+- Variable **508** — `lp` (**URL** variable): Component `URL` / Query, Query Key `lp`, **default value `18383`**.
 - Trigger **505** — "MTPT Parallel Tracking - mtpt=true" (Page View, filter `{{Page URL}}` contains `mtpt=true`).
 - Tag **506** — "MavenTrack - Parallel Tracking" (Custom HTML, `oncePerLoad`, consent `notSet`, firing trigger 505).
 
 Reused existing variables: `{{TRACKING_BASE}}` (id 358) and `{{utm_source}}` (id 116).
 
 Key constraints / decisions:
-- The gtm MCP **cannot create a workspace or URL-type (`u`) variables**. So `ds`/`lp` were created as **Custom JS** variables (with the 81/18383 default baked into the variable) via the `gtm-create-jsm-variable` skill, and the `mtpt=true` gate uses the built-in `{{Page URL}}` at the trigger instead of a `{{qs_mtpt}}` variable.
+- The gtm MCP **cannot create a workspace or URL-type (`u`) variables**, and **cannot change a variable's type** via `update_gtm_variable`. `ds`/`lp` were first created as Custom JS via the `gtm-create-jsm-variable` skill, then (per feedback that the JS looked ugly) **overwritten in place as clean URL variables** with a full-resource PUT (`scratchpad/set_url_variable.py`, reusing `GTMClient`'s token). Same variable IDs kept, so `{{ds}}`/`{{lp}}` references stay valid.
+- **GTM URL-variable default value is stored in `formatValue.convertUndefinedToValue` (+ `convertNullToValue`), NOT as `setDefaultValue`/`defaultValue` parameters** — GTM silently strips those parameter keys. This is how the UI's "Set Default Value" checkbox is represented for URL variables.
+- The `mtpt=true` gate uses the built-in `{{Page URL}}` at the trigger instead of a `{{qs_mtpt}}` variable.
 - **Dependency accepted (approved):** the callcenter style depends on MavenScripts (`buildCTALinks`/`getDeviceInfo`/`getBrowserName`). If MavenScripts is not loaded on a site, the `setTimeout` poll retries indefinitely and the pixel never fires. Acceptable because MavenScripts is enabled where `mtpt` traffic lands.
 - `cid` is no longer read explicitly — `appendQueryString: true` forwards the entire inbound query string (including `cid`, `fbclid`, etc.) automatically.
 
