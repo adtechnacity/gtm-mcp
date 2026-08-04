@@ -132,6 +132,21 @@ Manual QA in GTM Preview on workspace 35, before publishing:
    A1 tag may be sequenced but self-discards via the in-HTML guard).
 4. `MT Action 1` still fires exactly as before — sequencing must not change its behavior.
 
-## Status
+## Status (as-built 2026-08-04)
 
-Staged in workspace 35. **Not published** — publish is Kemberly's call after Preview QA.
+**Implemented and staged in workspace 35. NOT published.** Pending: Preview QA (above) + publish.
+
+| Object | ID | Verified |
+|--------|----|----------|
+| Var `VENDOR_YAHOO_DSP_PIXEL_ID` (jsm) | **128** | body reads `c.vendors.yahoo.pixelId`, `parentFolderId: 3` (with the other `VENDOR_*` vars), notes set |
+| Var `CFG_SITES` | 5 (edited) | `yahoo: { pixelId: "10221725" }` under `smarteradvisors.co` → `vendors`; `.de` entry byte-identical to before |
+| Trigger `Feature - Yahoo DSP Enabled` | **129** | pageview, `{{VENDOR_YAHOO_DSP_PIXEL_ID}}` equals `null` negated |
+| Tag `Yahoo DSP DOT Base` | **130** | firing `[129]`, no blocking, `oncePerEvent`, consent `notSet` |
+| Tag `Yahoo DSP A1 Conversion` | **131** | **no** `firingTriggerId`, `oncePerLoad`, consent `notSet`, in-HTML pixelId guard |
+| Tag `MT Action 1` | 75 (edited) | `teardownTag: [{tagName: "Yahoo DSP A1 Conversion"}]`; firing `[35]`, blocking `[103]`, params and `oncePerLoad` all preserved |
+
+Note: the API omits `stopTeardownOnFailure: false` from the stored value — it is the default,
+so its absence is correct, not a dropped field (same behavior seen in the cos-tags build).
+
+No Python code changed; `update_tag` (added 2026-07-17, still uncommitted on
+`feature/variable-and-trigger-tools`) was used as-is for the sequencing hook.
