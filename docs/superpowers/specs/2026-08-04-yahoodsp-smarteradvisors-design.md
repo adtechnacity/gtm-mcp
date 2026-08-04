@@ -148,5 +148,27 @@ Manual QA in GTM Preview on workspace 35, before publishing:
 Note: the API omits `stopTeardownOnFailure: false` from the stored value — it is the default,
 so its absence is correct, not a dropped field (same behavior seen in the cos-tags build).
 
+### Incident: the teardown was silently dropped once (same day)
+
+Shortly after the build, workspace 35 was synced to a newer base container version (≈2026-07-31)
+carrying the **MPG Pre-boot CTA Click Replay** workstream — vars 118 `dl_mpg_href`,
+119 `dl_mpg_cta_id`, 120 `dl_mpg_cta_position`, 126 `is_outbound`, triggers 121/122/123 — none of
+which were visible in the workspace when this was built. That version **also modified tag 75**
+(added firing trigger 121), so tag 75 was a conflict: the incoming revision won and the
+`teardownTag` was discarded. Tell-tale: tag 75's fingerprint went *backwards*, from `…866401413`
+(our write) to `…506957716` (the July-31 revision).
+
+Re-applied with a partial `update_tag` (teardown only), which preserved the new
+`firingTriggerId: ["35", "121"]`. Current fingerprint `…872365797`.
+
+**Consequence — recurring risk.** Yahoo's A1 hook lives *inside* tag 75, an object other
+workstreams actively edit. Any future sync or version that touches tag 75 can drop the teardown
+again, silently and with nothing else visibly broken. **Check tag 75's Tag Sequencing right
+before publishing, and after any workspace sync.**
+
+Upside of the same design: because Yahoo A1 is a teardown of tag 75, it inherited the new MPG
+replay path for free — no rewiring. Bing needed a dedicated trigger (123) and Google Ads
+another (122) for that same path.
+
 No Python code changed; `update_tag` (added 2026-07-17, still uncommitted on
 `feature/variable-and-trigger-tools`) was used as-is for the sequencing hook.
