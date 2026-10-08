@@ -80,7 +80,9 @@ One of the two credential variables is required. Scopes requested:
 | `list_gtm_triggers`  | List all triggers with filters      |
 | `list_gtm_variables` | List all variables                  |
 | `get_gtm_tag`        | Get full tag details by ID          |
+| `get_gtm_trigger`    | Get full trigger details by ID      |
 | `get_gtm_variable`   | Get full variable details by ID (JS source for `jsm`) |
+| `find_gtm_references` | What uses a trigger / variable / tag (field paths) — run before deleting or renaming |
 
 ### Version History
 
@@ -120,11 +122,17 @@ One of the two credential variables is required. Scopes requested:
 | `delete_gtm_variable` | Delete a variable from workspace |
 | `delete_trigger`      | Delete a trigger from workspace (detach it from tags first) |
 
-### Publishing
+### Workspaces & Publishing
 
-| Tool                    | Description                                  |
-| ----------------------- | -------------------------------------------- |
-| `publish_gtm_container` | Create version from workspace and publish it |
+| Tool                       | Description |
+| -------------------------- | ----------- |
+| `get_gtm_workspace_status` | Pending changes + merge conflicts — what the next version would ship |
+| `create_gtm_workspace`     | New workspace (separate draft per person / task) |
+| `sync_gtm_workspace`       | Update a workspace to the latest version; returns merge conflicts |
+| `revert_gtm_entity`        | Undo a workspace's changes to one tag / trigger / variable |
+| `create_gtm_version`       | Create a version from a workspace without publishing (for review) |
+| `publish_gtm_version`      | Publish an existing version — use an older one to roll back |
+| `publish_gtm_container`    | Create a version from a workspace and publish it (one step) |
 
 ### Deprecated aliases (removed in the next release)
 
@@ -192,7 +200,31 @@ create_gtm_variable(javascript=<is_<cohort>_source>) → create_trigger(customEv
     → update_tags_triggers_batch(tag_ids, action="set", trigger_ids=[id])                   # replace firing
 ```
 
-### 7. Version History / Change Audit ("what changed in version X?")
+### 7. Review Before Publishing
+
+```
+get_gtm_workspace_status → (sync_gtm_workspace if conflicts) → create_gtm_version
+    → review in GTM UI / diff_gtm_container_versions(from_version_id="live", to_version_id=new)
+    → publish_gtm_version(new)
+```
+
+### 8. Roll Back
+
+```
+list_gtm_container_versions → diff_gtm_container_versions(from_version_id=good, to_version_id="live")
+    → publish_gtm_version(good)
+```
+
+Rollback doesn't touch workspaces: the bad change is still in the Default
+Workspace and ships again with its next publish — fix or `revert_gtm_entity` it.
+
+### 9. Safe Delete / Rename
+
+```
+find_gtm_references(kind, entity_id) → detach / edit each reference → delete_tag / delete_trigger / delete_gtm_variable
+```
+
+### 10. Version History / Change Audit ("what changed in version X?")
 
 ```
 list_gtm_container_versions(account_id, container_id)
@@ -233,36 +265,36 @@ The GTM API v2 has 18 resource families with ~105 methods total. The table below
 | ----------------------------- | ----------- | --------------------------------------- |
 | `workspaces.list`             | Yes         | `list_gtm_workspaces`                   |
 | `workspaces.get`              | No          | —                                       |
-| `workspaces.create`           | No          | —                                       |
+| `workspaces.create`           | Yes         | `create_gtm_workspace` |
 | `workspaces.update`           | No          | —                                       |
 | `workspaces.delete`           | No          | —                                       |
-| `workspaces.sync`             | No          | —                                       |
+| `workspaces.sync`             | Yes         | `sync_gtm_workspace` |
 | `workspaces.resolve_conflict` | No          | —                                       |
 | `workspaces.quick_preview`    | No          | —                                       |
-| `workspaces.create_version`   | Yes         | `publish_gtm_container` (internal step) |
-| `workspaces.getStatus`        | No          | —                                       |
+| `workspaces.create_version`   | Yes         | `create_gtm_version`, `publish_gtm_container` |
+| `workspaces.getStatus`        | Yes         | `get_gtm_workspace_status` |
 
 ### accounts.containers.workspaces.tags
 
 | Method        | Implemented | Tool                                                                                                                                                                                                                                                                                      |
 | ------------- | ----------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `tags.list`   | Yes         | `list_gtm_tags`                                                                                                                                                                                                                                                                           |
-| `tags.get`    | Yes         | `get_gtm_tag`                                                                                                                                                                                                                                                                             |
+| `tags.get`    | Yes         | `get_gtm_tag` |
 | `tags.create` | Yes         | `create_tag`                                                                                                                                                                                                                                                                              |
 | `tags.update` | Yes         | Every tool under "Modifying" that touches tags |
 | `tags.delete` | Yes         | `delete_tag`                                                                                                                                                                                                                                                                              |
-| `tags.revert` | No          | —                                                                                                                                                                                                                                                                                         |
+| `tags.revert` | Yes         | `revert_gtm_entity` |
 
 ### accounts.containers.workspaces.triggers
 
 | Method            | Implemented | Tool                                                 |
 | ----------------- | ----------- | ---------------------------------------------------- |
 | `triggers.list`   | Yes         | `list_gtm_triggers`                                  |
-| `triggers.get`    | Yes         | (internal — used by `update_trigger_parameters`)     |
+| `triggers.get`    | Yes         | `get_gtm_trigger`, `find_gtm_references` |
 | `triggers.create` | Yes         | `create_trigger`                                     |
 | `triggers.update` | Yes         | `update_trigger_parameters`, `update_trigger_filter` |
 | `triggers.delete` | Yes         | `delete_trigger`                                     |
-| `triggers.revert` | No          | —                                                    |
+| `triggers.revert` | Yes         | `revert_gtm_entity` |
 
 ### accounts.containers.workspaces.variables
 
@@ -273,13 +305,13 @@ The GTM API v2 has 18 resource families with ~105 methods total. The table below
 | `variables.create` | Yes         | `create_gtm_variable`, `create_datalayer_variables_batch` |
 | `variables.update` | Yes         | `update_gtm_variable` |
 | `variables.delete` | Yes         | `delete_gtm_variable`                                                                 |
-| `variables.revert` | No          | —                                                                                     |
+| `variables.revert` | Yes         | `revert_gtm_entity` |
 
 ### accounts.containers.versions
 
 | Method                | Implemented | Tool                                                                                               |
 | --------------------- | ----------- | -------------------------------------------------------------------------------------------------- |
-| `versions.publish`    | Yes         | `publish_gtm_container`                                                                            |
+| `versions.publish`    | Yes         | `publish_gtm_version`, `publish_gtm_container` |
 | `versions.list`       | No          | —                                                                                                  |
 | `versions.get`        | Yes         | `get_gtm_container_version`, `diff_gtm_container_versions`                                         |
 | `versions.update`     | No          | —                                                                                                  |
@@ -394,20 +426,17 @@ The GTM API v2 has 18 resource families with ~105 methods total. The table below
 
 ## Priority for Future Implementation
 
-### High — Complete CRUD on core resources
+### High
 
-- `tags.revert`
-- `triggers.revert`
-- `workspaces.create`, `workspaces.get`
+- `workspaces.get`, `workspaces.delete`, `workspaces.resolve_conflict`
+- `workspaces.quick_preview` (preview link without publishing)
 
 ### Medium — Environments, versions, folders
 
 - `environments.list`, `environments.create`
-- `versions.list`
 - `version_headers.latest`
 - `folders.list`, `folders.create`, `folders.entities`
 - `built_in_variables.list`, `built_in_variables.create`
-- `workspaces.sync`, `workspaces.getStatus`
 
 ### Low — Advanced features
 
