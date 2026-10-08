@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+
+### Added
+
+- `create_gtm_variable` tool — create a variable of any type via `variables.create`; `javascript=` builds a Custom JavaScript (`jsm`) variable.
+- `get_gtm_variable` and `update_gtm_variable` tools — read / partially update a variable in place (`javascript=` shortcut for `jsm`).
+- `update_tag` tool — partial in-place tag update (name, parameters, firing/blocking triggers, setup/teardown sequencing, firing option, consent, notes, paused, folder); keeps the tag ID.
+- `set_tags_firing_option_batch`, `pause_tag`, `unpause_tag` tools.
+- `tests/` pytest suite (mocked GTM client): `uv run pytest tests/ -q`.
+
 ## [0.5.0] - 2026-06-10
 
 ### Added

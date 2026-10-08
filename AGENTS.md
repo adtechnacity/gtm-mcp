@@ -41,7 +41,7 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 3. Requests scopes: `tagmanager.readonly`, `tagmanager.edit.containers`, `tagmanager.publish`
 4. Builds the `tagmanager` v2 service — no browser, no token file, fully headless
 
-## Implemented Tools (33)
+## Implemented Tools (40)
 
 ### Discovery
 
@@ -60,6 +60,7 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 | `list_gtm_triggers`  | List all triggers with filters      |
 | `list_gtm_variables` | List all variables                  |
 | `get_gtm_tag`        | Get full tag details by ID          |
+| `get_gtm_variable`   | Get full variable details by ID (JS source for `jsm`) |
 
 ### Version History
 
@@ -79,11 +80,16 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 | `create_datalayer_variable`        | Single Data Layer Variable                                                                                        |
 | `create_datalayer_variables_batch` | Multiple Data Layer Variables                                                                                     |
 | `create_js_variable`               | Custom JavaScript variable (type `jsm`)                                                                           |
+| `create_gtm_variable`              | Any variable type; `javascript=` shortcut for `jsm`                                                               |
 
 ### Modifying
 
 | Tool                                      | Description                                                                                                                                                                                  |
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `update_tag`                              | Partial in-place tag update (triggers, sequencing, firing option, consent, notes, paused, folder) — keeps tag ID |
+| `update_gtm_variable`                     | Update a variable in place; `javascript=` shortcut for `jsm` |
+| `set_tags_firing_option_batch`            | Bulk set `tagFiringOption` on multiple tags |
+| `pause_tag` / `unpause_tag`               | Toggle a tag's `paused` flag (reversible) |
 | `update_tag_consent_settings`             | Set consent config for one tag                                                                                                                                                               |
 | `update_tags_consent_settings_batch`      | Set consent config for multiple tags                                                                                                                                                         |
 | `update_tag_html`                         | Replace the HTML body of a Custom HTML tag                                                                                                                                                   |
@@ -391,4 +397,6 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 
 ## Testing
 
-All old test files have been removed. Tests need to be written using pytest + pytest-asyncio.
+pytest + pytest-asyncio: `uv run pytest tests/ test_helpers.py test_components.py -q`. Tests
+mock the GTM client with `MagicMock` and patch `get_gtm_client` /
+`_resolve_workspace_parent`, so no credentials or network access are needed.

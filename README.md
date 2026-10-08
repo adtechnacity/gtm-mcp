@@ -4,7 +4,7 @@ An MCP server that exposes Google Tag Manager API v2 as tools for AI agents like
 
 ## Features
 
-- **33 MCP tools** covering discovery, CRUD, version history, consent management, batch operations, and publishing
+- **40 MCP tools** covering discovery, CRUD, version history, consent management, batch operations, and publishing
 - **Service account authentication** — headless, no browser flow, works in containers
 - **Template builder** for generating GTM component JSON locally
 - **Batch operations** for bulk consent updates and variable creation
@@ -101,7 +101,7 @@ Or using the installed entry point:
 }
 ```
 
-## Available Tools (33)
+## Available Tools (40)
 
 ### Discovery
 
@@ -116,6 +116,7 @@ Or using the installed entry point:
 - `list_gtm_triggers` — List all triggers with filters
 - `list_gtm_variables` — List all variables
 - `get_gtm_tag` — Get full tag details by ID
+- `get_gtm_variable` — Get full variable details by ID (includes the JS source for `jsm` variables)
 
 ### Version History
 
@@ -131,9 +132,14 @@ Or using the installed entry point:
 - `create_datalayer_variable` — Create a single Data Layer Variable
 - `create_datalayer_variables_batch` — Create multiple Data Layer Variables
 - `create_js_variable` — Create a Custom JavaScript variable (type `jsm`)
+- `create_gtm_variable` — Create a variable of any type (`javascript=` shortcut for `jsm`)
 
 ### Modifying
 
+- `update_tag` — Partial in-place tag update (name, parameters, firing/blocking triggers, setup/teardown sequencing, firing option, consent, notes, paused, folder) — keeps the tag ID
+- `update_gtm_variable` — Update a variable in place (name, parameters, notes, folder; `javascript=` shortcut for `jsm`)
+- `set_tags_firing_option_batch` — Bulk set the firing option (`unlimited` / `oncePerEvent` / `oncePerLoad`) on multiple tags
+- `pause_tag` / `unpause_tag` — Toggle a tag's `paused` flag (reversible; no-op if already in that state)
 - `update_tag_consent_settings` — Set consent config for one tag
 - `update_tags_consent_settings_batch` — Set consent config for multiple tags
 - `update_tag_html` — Replace the HTML body of a Custom HTML tag

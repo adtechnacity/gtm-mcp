@@ -1,14 +1,16 @@
 """
 Write MCP tools for Google Tag Manager.
 
-Registers 19 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
+Registers 25 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
 create_tag, create_trigger, create_datalayer_variable, create_datalayer_variables_batch,
 create_js_variable, publish_gtm_container, update_tag_consent_settings,
 update_tags_consent_settings_batch, update_tag_html, update_tag_parameters,
 update_trigger_parameters, update_trigger_filter,
 delete_tag, delete_trigger, add_firing_trigger_to_tags_batch,
 add_blocking_trigger_to_tags_batch, set_firing_triggers_on_tags_batch,
-remove_firing_trigger_from_tags_batch, remove_blocking_trigger_from_tags_batch.
+remove_firing_trigger_from_tags_batch, remove_blocking_trigger_from_tags_batch,
+set_tags_firing_option_batch, pause_tag, unpause_tag, create_gtm_variable,
+update_gtm_variable, update_tag.
 """
 import asyncio
 
@@ -17,6 +19,7 @@ from fastmcp_gtm_helpers import (
     MAX_BATCH_SIZE,
     _create_datalayer_var,
     _validate_consent_params, _build_consent_settings,
+    _validate_firing_option,
     _validate_ids, _resolve_workspace_parent,
     _batch_update_tags,
     _append_trigger_to_tags_batch,
@@ -1269,3 +1272,504 @@ async def remove_blocking_trigger_from_tags_batch(
             "status": "error",
             "message": f"Failed to batch remove blocking trigger: {str(e)}"
         }
+
+
+# ---------------------------------------------------------------------------
+# Tag/variable tools from feature/variable-and-trigger-tools
+# ---------------------------------------------------------------------------
+
+
+async def _set_tag_paused(client, ws_parent: str, tag_id: str, paused: bool) -> dict:
+    """Toggle a tag's `paused` flag, preserving every other field.
+
+    No-op (returns status="noop") if the tag is already in the requested state.
+    Uses fingerprint for optimistic concurrency on the update.
+    """
+    path = f"{ws_parent}/tags/{tag_id}"
+    tag = await _run(
+        client.service.accounts().containers().workspaces().tags().get(path=path)
+    )
+
+    current = bool(tag.get("paused", False))
+    if current == paused:
+        return {
+            "status": "noop",
+            "message": f"Tag '{tag.get('name')}' already {'paused' if paused else 'unpaused'}",
+            "tag_id": tag_id,
+            "tag_name": tag.get("name"),
+            "paused": current,
+        }
+
+    tag["paused"] = paused
+    updated = await _run(
+        client.service.accounts().containers().workspaces().tags().update(
+            path=path, body=tag, fingerprint=tag.get("fingerprint"),
+        )
+    )
+    return {
+        "status": "success",
+        "message": f"Tag '{updated.get('name')}' {'paused' if paused else 'unpaused'}",
+        "tag_id": tag_id,
+        "tag_name": updated.get("name"),
+        "paused": paused,
+    }
+
+
+@mcp.tool()
+async def set_tags_firing_option_batch(
+    account_id: str,
+    container_id: str,
+    tag_ids: list,
+    firing_option: str,
+    workspace_id: str = "1"
+) -> dict:
+    """Bulk set the tag firing option for multiple GTM tags at once.
+
+    The firing option controls how often a tag may fire relative to events on
+    a page:
+      - "oncePerLoad"  → once per page load (the GTM UI label is "Once per page")
+      - "oncePerEvent" → once per triggering event (can fire multiple times per page)
+      - "unlimited"    → every time a firing trigger is satisfied
+
+    Each tag is fetched and updated individually with fingerprint concurrency,
+    preserving every other field. Tags already set to ``firing_option`` are
+    skipped. Use list_gtm_tags / get_gtm_tag to find tag IDs and inspect their
+    current firing option. Changes apply on the next container publish.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_ids: List of tag ID strings to update
+        firing_option: One of "unlimited", "oncePerEvent", or "oncePerLoad"
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id)
+        if error:
+            return {"status": "error", "message": error}
+        error = _validate_firing_option(firing_option)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        workspace_id, prefix = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+
+        def apply_firing_option(tag):
+            if tag.get("tagFiringOption") == firing_option:
+                return None
+            tag["tagFiringOption"] = firing_option
+            return tag
+        return await _batch_update_tags(
+            client, prefix, tag_ids, apply_firing_option,
+            extra_fields_fn=lambda t: {"firing_option": t.get("tagFiringOption")},
+            skip_reason=f"Already set to {firing_option}",
+        )
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to batch set firing option: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def pause_tag(
+    account_id: str,
+    container_id: str,
+    tag_id: str,
+    workspace_id: str = "1",
+) -> dict:
+    """Pause a GTM tag so it stops firing without deleting it.
+
+    Reversible: use unpause_tag to restore. Useful for safely deprecating
+    a tag — pause first, monitor downstream tracking for a few days, then
+    delete only if nothing breaks. Changes apply on the next container
+    publish; until publish, the live container is unaffected.
+
+    Returns status="noop" if the tag is already paused.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_id: The tag ID to pause
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        return await _set_tag_paused(client, ws_parent, tag_id, paused=True)
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to pause tag: {str(e)}"}
+
+
+@mcp.tool()
+async def unpause_tag(
+    account_id: str,
+    container_id: str,
+    tag_id: str,
+    workspace_id: str = "1",
+) -> dict:
+    """Unpause a previously paused GTM tag so it resumes firing.
+
+    Inverse of pause_tag. Returns status="noop" if the tag is already unpaused.
+    Changes apply on the next container publish.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_id: The tag ID to unpause
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+        return await _set_tag_paused(client, ws_parent, tag_id, paused=False)
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to unpause tag: {str(e)}"}
+
+
+@mcp.tool()
+async def create_gtm_variable(
+    account_id: str,
+    container_id: str,
+    name: str,
+    *,
+    variable_type: str | None = None,
+    parameters: list | None = None,
+    javascript: str | None = None,
+    notes: str | None = None,
+    parent_folder_id: str | None = None,
+    workspace_id: str = "1",
+) -> dict:
+    """Create a GTM variable of any type.
+
+    Pass ``javascript=<source>`` to create a Custom JavaScript (jsm) variable;
+    the tool builds the parameter list. For any other type pass
+    ``variable_type`` (e.g. "c" constant, "u" URL, "v" data layer) plus a raw
+    GTM ``parameters`` list. ``parameters`` and ``javascript`` are mutually
+    exclusive.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        name: Display name; tags reference it as ``{{name}}``
+        variable_type: GTM variable type; defaults to "jsm" with javascript
+        parameters: Raw GTM parameter list (optional)
+        javascript: Custom JS source; implies type "jsm" (optional)
+        notes: Notes (optional)
+        parent_folder_id: Folder ID (optional)
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id)
+        if error:
+            return {"status": "error", "message": error}
+        if not name:
+            return {"status": "error", "message": "name must be a non-empty string"}
+        if parameters is not None and javascript is not None:
+            return {"status": "error",
+                    "message": "parameters and javascript are mutually exclusive"}
+        if javascript is not None:
+            if variable_type not in (None, "jsm"):
+                return {"status": "error",
+                        "message": f"javascript requires type 'jsm', got '{variable_type}'"}
+            variable_type = "jsm"
+            parameters = [{"type": "template", "key": "javascript", "value": javascript}]
+        elif not variable_type:
+            return {"status": "error",
+                    "message": "variable_type is required unless javascript is given"}
+
+        body = {"name": name, "type": variable_type, "parameter": parameters or []}
+        if notes is not None:
+            body["notes"] = notes
+        if parent_folder_id is not None:
+            body["parentFolderId"] = parent_folder_id
+
+        client = get_gtm_client()
+        _, parent = await _resolve_workspace_parent(
+            client, account_id, container_id, workspace_id
+        )
+        created = await _run(
+            client.service.accounts().containers().workspaces().variables().create(
+                parent=parent, body=body,
+            )
+        )
+
+        return {
+            "status": "success",
+            "message": f"Variable '{created.get('name')}' created",
+            "variable_id": created.get("variableId"),
+            "variable_name": created.get("name"),
+            "variable_type": created.get("type"),
+            "path": created.get("path"),
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to create variable: {str(e)}"}
+
+
+@mcp.tool()
+async def update_gtm_variable(
+    account_id: str,
+    container_id: str,
+    variable_id: str,
+    *,
+    name: str | None = None,
+    parameters: list | None = None,
+    javascript: str | None = None,
+    notes: str | None = None,
+    parent_folder_id: str | None = None,
+    workspace_id: str = "1",
+) -> dict:
+    """Update an existing GTM variable in place (partial update).
+
+    Fetches the variable, mutates only the fields you passed, then writes
+    it back with fingerprint concurrency. Preserves the variable's ID so
+    every tag/trigger reference to ``{{variable_name}}`` keeps working.
+
+    For jsm (Custom JavaScript) variables, pass ``javascript=<source>`` as
+    a shortcut; the tool builds the right parameter list for you. For any
+    variable type, pass ``parameters=<list of GTM parameter dicts>`` to
+    replace the parameter list directly. ``parameters`` and ``javascript``
+    are mutually exclusive.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        variable_id: The variable ID to update
+        name: New display name (optional)
+        parameters: Raw GTM parameter list, replaces existing (optional)
+        javascript: Custom JS source; jsm variables only (optional)
+        notes: New notes (optional)
+        parent_folder_id: New parent folder ID (optional)
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(
+            account_id=account_id, container_id=container_id, variable_id=variable_id
+        )
+        if error:
+            return {"status": "error", "message": error}
+
+        if parameters is not None and javascript is not None:
+            return {
+                "status": "error",
+                "message": "parameters and javascript are mutually exclusive",
+            }
+        if all(v is None for v in (name, parameters, javascript, notes, parent_folder_id)):
+            return {
+                "status": "error",
+                "message": "nothing to update (pass at least one of name, parameters, javascript, notes, parent_folder_id)",
+            }
+
+        client = get_gtm_client()
+        _, ws_parent = await _resolve_workspace_parent(
+            client, account_id, container_id, workspace_id
+        )
+        path = f"{ws_parent}/variables/{variable_id}"
+
+        variable = await _run(
+            client.service.accounts().containers().workspaces().variables().get(path=path)
+        )
+
+        if javascript is not None and variable.get("type") != "jsm":
+            return {
+                "status": "error",
+                "message": (
+                    f"javascript shortcut only valid for jsm variables; "
+                    f"this variable is type '{variable.get('type')}'"
+                ),
+            }
+
+        updated_fields: list[str] = []
+
+        if javascript is not None:
+            variable["parameter"] = [
+                {"type": "template", "key": "javascript", "value": javascript}
+            ]
+            updated_fields.append("parameters")
+        elif parameters is not None:
+            variable["parameter"] = parameters
+            updated_fields.append("parameters")
+
+        if name is not None:
+            variable["name"] = name
+            updated_fields.append("name")
+        if notes is not None:
+            variable["notes"] = notes
+            updated_fields.append("notes")
+        if parent_folder_id is not None:
+            variable["parentFolderId"] = parent_folder_id
+            updated_fields.append("parent_folder_id")
+
+        updated = await _run(
+            client.service.accounts().containers().workspaces().variables().update(
+                path=path, body=variable, fingerprint=variable.get("fingerprint"),
+            )
+        )
+
+        return {
+            "status": "success",
+            "message": f"Variable '{updated.get('name')}' updated",
+            "variable_id": variable_id,
+            "variable_name": updated.get("name"),
+            "variable_type": updated.get("type"),
+            "updated_fields": updated_fields,
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to update variable: {str(e)}"}
+
+
+@mcp.tool()
+async def update_tag(
+    account_id: str,
+    container_id: str,
+    tag_id: str,
+    *,
+    name: str | None = None,
+    parameter: list | None = None,
+    firing_trigger_ids: list | None = None,
+    blocking_trigger_ids: list | None = None,
+    setup_tag_name: str | None = None,
+    teardown_tag_name: str | None = None,
+    stop_on_failure: bool = False,
+    tag_firing_option: str | None = None,
+    consent_status: str | None = None,
+    consent_types: list | None = None,
+    notes: str | None = None,
+    paused: bool | None = None,
+    parent_folder_id: str | None = None,
+    workspace_id: str = "1",
+) -> dict:
+    """Update an existing GTM tag in place (partial update).
+
+    Fetches the tag, mutates only the fields you passed, then writes it back
+    with fingerprint concurrency. Preserves the tag's ID so every reference to
+    it (including tag-sequencing links) keeps working. Any field left as
+    ``None`` is untouched; pass ``firing_trigger_ids=[]`` to explicitly clear a
+    tag's own firing triggers (e.g. a tag that should fire only via sequencing).
+
+    Tag sequencing: pass ``teardown_tag_name`` to fire another tag *after* this
+    one (this tag's ``teardownTag``), or ``setup_tag_name`` to fire one
+    *before* it (``setupTag``). ``stop_on_failure`` maps to
+    ``stopTeardownOnFailure`` / ``stopOnSetupFailure`` for whichever you set.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        tag_id: The tag ID to update
+        name: New display name (optional)
+        parameter: Raw GTM parameter list, replaces existing (optional)
+        firing_trigger_ids: Replace the tag's firing trigger IDs; [] clears them
+        blocking_trigger_ids: Replace the tag's blocking (exception) trigger IDs
+        setup_tag_name: Name of a tag to fire before this one (setupTag)
+        teardown_tag_name: Name of a tag to fire after this one (teardownTag)
+        stop_on_failure: stopOnSetupFailure / stopTeardownOnFailure flag
+        tag_firing_option: "unlimited", "oncePerEvent", or "oncePerLoad"
+        consent_status: "notSet", "notNeeded", or "needed"
+        consent_types: Consent types when consent_status is "needed"
+        notes: New notes (optional)
+        paused: Pause/unpause the tag (optional)
+        parent_folder_id: New parent folder ID (optional)
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(
+            account_id=account_id, container_id=container_id, tag_id=tag_id
+        )
+        if error:
+            return {"status": "error", "message": error}
+
+        mutators = (name, parameter, firing_trigger_ids, blocking_trigger_ids,
+                    setup_tag_name, teardown_tag_name, tag_firing_option,
+                    consent_status, notes, paused, parent_folder_id)
+        if all(v is None for v in mutators):
+            return {
+                "status": "error",
+                "message": ("nothing to update (pass at least one mutable field, "
+                            "e.g. name, parameter, firing_trigger_ids, "
+                            "teardown_tag_name, tag_firing_option, paused)"),
+            }
+
+        if tag_firing_option is not None:
+            error = _validate_firing_option(tag_firing_option)
+            if error:
+                return {"status": "error", "message": error}
+
+        if consent_status is not None:
+            error = _validate_consent_params(consent_status, consent_types)
+            if error:
+                return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        _, ws_parent = await _resolve_workspace_parent(
+            client, account_id, container_id, workspace_id
+        )
+        path = f"{ws_parent}/tags/{tag_id}"
+
+        tag = await _run(
+            client.service.accounts().containers().workspaces().tags().get(path=path)
+        )
+
+        updated_fields: list[str] = []
+
+        if name is not None:
+            tag["name"] = name
+            updated_fields.append("name")
+        if parameter is not None:
+            tag["parameter"] = parameter
+            updated_fields.append("parameter")
+        if firing_trigger_ids is not None:
+            tag["firingTriggerId"] = firing_trigger_ids
+            updated_fields.append("firing_trigger_ids")
+        if blocking_trigger_ids is not None:
+            tag["blockingTriggerId"] = blocking_trigger_ids
+            updated_fields.append("blocking_trigger_ids")
+        if teardown_tag_name is not None:
+            tag["teardownTag"] = [
+                {"tagName": teardown_tag_name, "stopTeardownOnFailure": stop_on_failure}
+            ]
+            updated_fields.append("teardown_tag")
+        if setup_tag_name is not None:
+            tag["setupTag"] = [
+                {"tagName": setup_tag_name, "stopOnSetupFailure": stop_on_failure}
+            ]
+            updated_fields.append("setup_tag")
+        if tag_firing_option is not None:
+            tag["tagFiringOption"] = tag_firing_option
+            updated_fields.append("tag_firing_option")
+        if consent_status is not None:
+            tag["consentSettings"] = _build_consent_settings(consent_status, consent_types)
+            updated_fields.append("consent_settings")
+        if notes is not None:
+            tag["notes"] = notes
+            updated_fields.append("notes")
+        if paused is not None:
+            tag["paused"] = paused
+            updated_fields.append("paused")
+        if parent_folder_id is not None:
+            tag["parentFolderId"] = parent_folder_id
+            updated_fields.append("parent_folder_id")
+
+        updated = await _run(
+            client.service.accounts().containers().workspaces().tags().update(
+                path=path, body=tag, fingerprint=tag.get("fingerprint"),
+            )
+        )
+
+        return {
+            "status": "success",
+            "message": f"Tag '{updated.get('name')}' updated",
+            "tag_id": tag_id,
+            "tag_name": updated.get("name"),
+            "tag_type": updated.get("type"),
+            "updated_fields": updated_fields,
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to update tag: {str(e)}"}
