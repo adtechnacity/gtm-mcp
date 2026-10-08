@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import tool_error
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -72,27 +74,24 @@ class TestValidation:
     async def test_invalid_tag_id_returns_error(self):
         from gtm_mcp.write_tools import update_tag
 
-        result = await update_tag(account_id="1", container_id="2", tag_id="bad",
-                                  name="x")
-        assert result["status"] == "error"
-        assert "tag_id" in result["message"]
+        message = await tool_error(update_tag(account_id="1", container_id="2", tag_id="bad",
+                                  name="x"))
+        assert "tag_id" in message
 
     @pytest.mark.asyncio
     async def test_nothing_to_update_returns_error(self):
         from gtm_mcp.write_tools import update_tag
 
-        result = await update_tag(account_id="1", container_id="2", tag_id="504")
-        assert result["status"] == "error"
-        assert "nothing to update" in result["message"].lower()
+        message = await tool_error(update_tag(account_id="1", container_id="2", tag_id="504"))
+        assert "nothing to update" in message.lower()
 
     @pytest.mark.asyncio
     async def test_invalid_firing_option_returns_error(self):
         from gtm_mcp.write_tools import update_tag
 
-        result = await update_tag(account_id="1", container_id="2", tag_id="504",
-                                  tag_firing_option="oncePerWeek")
-        assert result["status"] == "error"
-        assert "firing_option" in result["message"] or "firing option" in result["message"].lower()
+        message = await tool_error(update_tag(account_id="1", container_id="2", tag_id="504",
+                                  tag_firing_option="oncePerWeek"))
+        assert "firing_option" in message or "firing option" in message.lower()
 
 
 # ---------------------------------------------------------------------------

@@ -6,11 +6,18 @@ read and write tool modules. Import from here — never instantiate separately.
 """
 import asyncio
 import copy
+import functools
+import json
 import logging
 import sys
+import threading
+import time
 from datetime import datetime, timezone
 
+import google_auth_httplib2
+from googleapiclient.http import build_http
 from mcp.server import FastMCP
+from mcp.server.fastmcp.exceptions import ToolError
 
 # Redirect logging to stderr
 logging.basicConfig(
@@ -37,16 +44,72 @@ def get_gtm_client():
             logger.info("GTM client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize GTM client: {e}")
-            raise Exception(f"GTM authentication failed: {e}. Please ensure GOOGLE_APPLICATION_CREDENTIALS is set.") from e
+            raise ToolError(
+                f"GTM authentication failed: {e}. Set GOOGLE_APPLICATION_CREDENTIALS "
+                "or GOOGLE_OAUTH_CLIENT_SECRET."
+            ) from e
     return gtm_client
+
+
+_thread_local = threading.local()
+
+
+def _execute(request):
+    """Execute on this worker thread's own connection.
+
+    httplib2.Http isn't thread-safe, and every request built from the shared
+    service carries the same one — concurrent tool calls would interleave on
+    a socket. Credentials are shared; only the transport is per-thread.
+    """
+    shared = getattr(request, "http", None)
+    if not isinstance(shared, google_auth_httplib2.AuthorizedHttp):
+        return request.execute()
+    http = getattr(_thread_local, "http", None)
+    if http is None or http.credentials is not shared.credentials:
+        http = google_auth_httplib2.AuthorizedHttp(shared.credentials, http=build_http())
+        _thread_local.http = http
+    return request.execute(http=http)
 
 
 async def _run(request):
     """Run a blocking Google API request in a thread pool."""
-    result = await asyncio.to_thread(request.execute)
+    result = await asyncio.to_thread(_execute, request)
     if result is None:
         return {}
     return result
+
+
+def _describe_error(exc: Exception) -> str:
+    """Short message for an exception; HttpError gets ``HTTP <status>: <reason>``."""
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    reason = getattr(exc, "reason", None)
+    if status is not None and reason:
+        return f"HTTP {status}: {reason}"
+    return str(exc)
+
+
+def gtm_tool(failure: str):
+    """Register an MCP tool whose failures reach the client as MCP errors (isError).
+
+    Tools signal a handled failure by returning ``{"status": "error", ...}``;
+    anything raised is reported as ``"<failure>: <reason>"``. Partial batch
+    results (``status="partial"``) are not errors and pass through.
+    """
+    def decorator(fn):
+        @functools.wraps(fn)
+        async def wrapper(*args, **kwargs):
+            try:
+                result = await fn(*args, **kwargs)
+            except ToolError:
+                raise
+            except Exception as e:
+                raise ToolError(f"{failure}: {_describe_error(e)}") from e
+            if isinstance(result, dict) and result.get("status") == "error":
+                raise ToolError(result.get("message") or json.dumps(result))
+            return result
+        mcp.tool()(wrapper)
+        return wrapper
+    return decorator
 
 
 
@@ -56,57 +119,69 @@ async def _run(request):
 
 MAX_BATCH_SIZE = 50
 
-# Cache for resolved workspace IDs: (account_id, container_id) → workspace_id
-_workspace_cache: dict[tuple[str, str], str] = {}
+DEFAULT_WORKSPACE_NAME = "Default Workspace"
+_WORKSPACE_CACHE_TTL = 300  # seconds
+# (account_id, container_id) → (workspace_id, resolved_at)
+_workspace_cache: dict[tuple[str, str], tuple[str, float]] = {}
 
 
-async def _resolve_workspace_id(client, account_id: str, container_id: str, workspace_id: str) -> str:
-    """Resolve workspace_id, auto-detecting if the caller passed the default '1'.
+def _pick_workspace(workspaces: list, container_id: str, prefer_id_1: bool = False) -> str:
+    """Choose the workspace an unqualified call should use.
 
-    GTM workspace IDs are not always '1'. When the default is used, this
-    function lists the container's workspaces and returns the first one found.
-    Results are cached per (account, container) pair for the server's lifetime.
+    "Default Workspace" by name — its ID changes every time it's published
+    from, so an ID can't be assumed. A lone workspace is unambiguous. Several
+    with no default is an error: guessing could write into someone's draft.
     """
-    if workspace_id != "1":
+    ids = {w.get("workspaceId"): w.get("name") for w in workspaces if w.get("workspaceId")}
+    if not ids:
+        raise ValueError(f"Container {container_id} has no workspaces.")
+    if prefer_id_1 and "1" in ids:
+        return "1"
+    defaults = [ws_id for ws_id, name in ids.items() if name == DEFAULT_WORKSPACE_NAME]
+    if defaults:
+        return defaults[0]
+    if len(ids) == 1:
+        return next(iter(ids))
+    listing = ", ".join(f"{ws_id}={name!r}" for ws_id, name in ids.items())
+    raise ValueError(
+        f"Container {container_id} has {len(ids)} workspaces and none is named "
+        f"'{DEFAULT_WORKSPACE_NAME}'; pass workspace_id explicitly ({listing})."
+    )
+
+
+def _forget_workspace(account_id: str, container_id: str) -> None:
+    """Drop the cached workspace (publishing replaces the Default Workspace)."""
+    _workspace_cache.pop((account_id, container_id), None)
+
+
+async def _resolve_workspace_id(client, account_id: str, container_id: str, workspace_id: str | None) -> str:
+    """Return the workspace to act on.
+
+    An explicit numeric ID is used as-is. ``None`` resolves via
+    ``_pick_workspace``; ``"1"`` (the old default) does too, but keeps
+    workspace 1 when it exists, as before.
+    """
+    if workspace_id not in (None, "", "1"):
         if not str(workspace_id).strip().isdigit():
             raise ValueError(f"Invalid workspace_id: '{workspace_id}'. Must be a numeric string.")
         return workspace_id
 
     cache_key = (account_id, container_id)
-    if cache_key in _workspace_cache:
-        return _workspace_cache[cache_key]
+    cached = _workspace_cache.get(cache_key)
+    if cached and time.monotonic() - cached[1] < _WORKSPACE_CACHE_TTL:
+        return cached[0]
 
     parent = f"accounts/{account_id}/containers/{container_id}"
-    result = await _run(
-        client.service.accounts().containers().workspaces().list(parent=parent)
+    workspaces = await _paginated_list(
+        lambda **kw: client.service.accounts().containers().workspaces().list(parent=parent, **kw),
+        "workspace",
     )
-    workspaces = result.get("workspace", [])
-    if not workspaces:
-        logger.warning("No workspaces found for container %s; falling back to workspace_id='%s'", container_id, workspace_id)
-        _workspace_cache[cache_key] = workspace_id
-        return workspace_id
-
-    # Check if workspace "1" actually exists
-    ws_ids = [w.get("workspaceId") for w in workspaces if w.get("workspaceId")]
-    if not ws_ids:
-        logger.warning("No valid workspace IDs found for container %s", container_id)
-        _workspace_cache[cache_key] = workspace_id
-        return workspace_id
-    if "1" in ws_ids:
-        _workspace_cache[cache_key] = "1"
-        return "1"
-
-    # Use the first workspace found
-    resolved = ws_ids[0]
-    _workspace_cache[cache_key] = resolved
-    logger.info(
-        "Auto-resolved workspace_id to '%s' (container %s has no workspace '1')",
-        resolved, container_id,
-    )
+    resolved = _pick_workspace(workspaces, container_id, prefer_id_1=workspace_id == "1")
+    _workspace_cache[cache_key] = (resolved, time.monotonic())
     return resolved
 
 
-async def _resolve_workspace_parent(client, account_id: str, container_id: str, workspace_id: str = "1") -> tuple[str, str]:
+async def _resolve_workspace_parent(client, account_id: str, container_id: str, workspace_id: str | None = None) -> tuple[str, str]:
     """Resolve workspace ID and build the workspace parent path in one call."""
     ws_id = await _resolve_workspace_id(client, account_id, container_id, workspace_id)
     return ws_id, f"accounts/{account_id}/containers/{container_id}/workspaces/{ws_id}"
@@ -272,16 +347,18 @@ def _upsert_parameters(existing, updates):
     return result
 
 
+def _datalayer_parameters(key):
+    """GTM parameters for a Data Layer Variable (type ``v``, dataLayer v2) reading ``key``."""
+    return [
+        {'key': 'dataLayerVersion', 'value': '2', 'type': 'integer'},
+        {'key': 'setDefaultValue', 'value': 'false', 'type': 'boolean'},
+        {'key': 'name', 'value': key, 'type': 'template'},
+    ]
+
+
 async def _create_datalayer_var(client, parent, name, key):
     """Create a single Data Layer Variable and return its result dict."""
-    variable_body = {
-        'name': name, 'type': 'v',
-        'parameter': [
-            {'key': 'dataLayerVersion', 'value': '2', 'type': 'integer'},
-            {'key': 'setDefaultValue', 'value': 'false', 'type': 'boolean'},
-            {'key': 'name', 'value': key, 'type': 'template'},
-        ],
-    }
+    variable_body = {'name': name, 'type': 'v', 'parameter': _datalayer_parameters(key)}
     result = await _run(client.service.accounts().containers().workspaces().variables().create(
         parent=parent, body=variable_body))
     return {"name": name, "key": key, "variable_id": result.get('variableId')}
@@ -338,56 +415,33 @@ async def _batch_update_tags(client, path_prefix, tag_ids, mutate_fn,
     return results
 
 
-async def _append_trigger_to_tags_batch(
-    client, path_prefix, tag_ids, trigger_id, *, field, label, skip_reason
-):
-    """Append a trigger ID to either ``firingTriggerId`` or ``blockingTriggerId`` across tags."""
-    def append(tag):
+
+async def _modify_tag_triggers_batch(client, path_prefix, tag_ids, trigger_ids, *, action, field):
+    """Add / remove / set trigger IDs in ``field`` (firing or blocking) across tags.
+
+    ``add`` appends IDs not already attached, ``remove`` detaches them, ``set``
+    replaces the list. Tags that wouldn't change are skipped.
+    """
+    ids = list(dict.fromkeys(trigger_ids))
+
+    def mutate(tag):
         existing = tag.get(field, [])
-        if trigger_id in existing:
+        if action == "add":
+            new = existing + [t for t in ids if t not in existing]
+        elif action == "remove":
+            new = [t for t in existing if t not in ids]
+        else:
+            new = ids
+        if new == existing:
             return None
-        tag[field] = existing + [trigger_id]
+        tag[field] = new
         return tag
+
     return await _batch_update_tags(
-        client, path_prefix, tag_ids, append,
-        extra_fields_fn=lambda t: {label: t.get(field, [])},
-        skip_reason=skip_reason,
+        client, path_prefix, tag_ids, mutate,
+        extra_fields_fn=lambda t: {field: t.get(field, [])},
+        skip_reason="No change",
     )
-
-
-async def _remove_trigger_from_tags_batch(
-    client, path_prefix, tag_ids, trigger_id, *, field, label, skip_reason
-):
-    """Remove a trigger ID from ``firingTriggerId`` or ``blockingTriggerId`` across tags."""
-    def remove(tag):
-        existing = tag.get(field, [])
-        if trigger_id not in existing:
-            return None
-        tag[field] = [t for t in existing if t != trigger_id]
-        return tag
-    return await _batch_update_tags(
-        client, path_prefix, tag_ids, remove,
-        extra_fields_fn=lambda t: {label: t.get(field, [])},
-        skip_reason=skip_reason,
-    )
-
-
-async def _set_triggers_on_tags_batch(
-    client, path_prefix, tag_ids, trigger_ids, *, field, label, skip_reason
-):
-    """Replace the ``firingTriggerId`` or ``blockingTriggerId`` list with ``trigger_ids``."""
-    new_list = list(trigger_ids)
-    def set_list(tag):
-        if tag.get(field, []) == new_list:
-            return None
-        tag[field] = new_list
-        return tag
-    return await _batch_update_tags(
-        client, path_prefix, tag_ids, set_list,
-        extra_fields_fn=lambda t: {label: t.get(field, [])},
-        skip_reason=skip_reason,
-    )
-
 
 # ---------------------------------------------------------------------------
 # Version history helpers — pure functions over ContainerVersion resources

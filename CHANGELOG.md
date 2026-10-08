@@ -12,6 +12,20 @@
 
 ### Changed
 
+- **Tool consolidation: 39 → 27 tools.** Fewer, broader tools are easier for agents to choose between, and the tool list is 25% smaller once aliases go.
+  - `update_tags_triggers_batch(tag_ids, action="add"|"remove"|"set", trigger_ids, kind="firing"|"blocking")` replaces the five `*_trigger*_tags_batch` tools; add/remove take several trigger IDs.
+  - `create_gtm_variable` gains `datalayer_key=` (replaces `create_datalayer_variable`) and covers `create_js_variable` via `javascript=`.
+  - `update_tag` covers `update_tag_consent_settings`, `pause_tag`, `unpause_tag`; `update_tag_parameters` covers `update_tag_html`.
+  - `get_gtm_container_version` defaults to `"live"` (replaces `get_gtm_live_version`); `list_gtm_containers` replaces `test_gtm_connection`.
+- **Deprecated aliases** for all 13 old names stay registered for this release with one-line descriptions (`src/gtm_mcp/legacy_tools.py`). `GTM_MCP_LEGACY_TOOLS=0` hides them; they're removed in the next release.
+
+- **Errors are MCP errors now.** Every tool registers through `@gtm_tool`, so failures reach the client with `isError: true` and a short message (`Failed to get tag: HTTP 404: Not found or permission denied.`) instead of a success-shaped `{"status": "error"}` dict. Batch `partial` and pause/unpause `noop` results are unchanged.
+- **Thread-safe API calls.** Requests run on a per-thread `httplib2` connection; the shared one could interleave concurrent tool calls (several users behind one hosted server).
+- **Workspace resolution.** `workspace_id` defaults to `None` → the workspace named "Default Workspace", or the only one. With several and no default the tool fails and lists them, instead of silently writing into the first. Cached 5 minutes, dropped on publish (which replaces the Default Workspace). `"1"` still works as before.
+- `publish_gtm_container` reports compiler errors / merge conflicts from `create_version` instead of failing on a missing path.
+- `list_gtm_containers` / `test_gtm_connection` paginate. `diff_gtm_container_versions` fetches both versions concurrently.
+- `GTMClient` is auth-only (`list_containers`, `publish_version` moved into the tools).
+
 - Code moved into the `src/gtm_mcp/` package (`server`, `read_tools`, `write_tools`, `helpers`, `client`, `cli`). Root `fastmcp_gtm_server.py` stays as a launcher so existing MCP configs keep working; prefer `uv run mcp-gtm-server`. CLI is now `uv run gtm-cli`.
 - All tests under `tests/`; `uv run pytest` needs no paths. Dev tooling is ruff (black/flake8/mypy were unused).
 - `tests/test_docs_tool_list.py` fails when AGENTS.md's tool list drifts from the registered tools.

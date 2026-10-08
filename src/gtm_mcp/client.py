@@ -7,9 +7,8 @@ two authentication methods:
 1. Service Account — headless, no browser flow. Set GOOGLE_APPLICATION_CREDENTIALS.
 2. OAuth Desktop Flow — opens browser once, caches token. Set GOOGLE_OAUTH_CLIENT_SECRET.
 
-All methods are synchronous (google-api-python-client is blocking). Callers
-in async contexts should use asyncio.to_thread() to avoid blocking the event
-loop.
+Tools use ``GTMClient().service`` through ``gtm_mcp.helpers._run``, which
+executes requests off the event loop on per-thread connections.
 
 Scopes:
     - tagmanager.readonly: Read-only access to GTM resources
@@ -25,7 +24,6 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
 
 from google.oauth2 import service_account
 from google.oauth2.credentials import Credentials
@@ -143,54 +141,3 @@ class GTMClient:
         service = build('tagmanager', 'v2', credentials=creds)
         logger.info("GTM service built successfully (OAuth)")
         return service
-
-    # ------------------------------------------------------------------
-    # Internal helpers
-    # ------------------------------------------------------------------
-
-    @staticmethod
-    def _workspace_parent(account_id: str, container_id: str, workspace_id: str = "1") -> str:
-        return f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
-
-    # ------------------------------------------------------------------
-    # Read operations
-    # ------------------------------------------------------------------
-
-    def list_containers(self, account_id: str) -> List[Dict[str, Any]]:
-        parent = f"accounts/{account_id}"
-        logger.info("Listing containers for account %s", account_id)
-        result = self.service.accounts().containers().list(parent=parent).execute()
-        containers = result.get('container', [])
-        logger.info("Found %d containers", len(containers))
-        return containers
-
-    # ------------------------------------------------------------------
-    # Publish
-    # ------------------------------------------------------------------
-
-    def publish_version(self, account_id: str, container_id: str, version_name: str, version_notes: str = "", workspace_id: str = "1") -> Dict[str, Any]:
-        parent = self._workspace_parent(account_id, container_id, workspace_id)
-        version_body = {
-            'name': version_name,
-            'notes': version_notes,
-        }
-
-        logger.info("Creating version: %s", version_name)
-        create_result = self.service.accounts().containers().workspaces().create_version(
-            path=parent, body=version_body
-        ).execute()
-
-        version_path = create_result.get('containerVersion', {}).get('path')
-        if not version_path:
-            raise RuntimeError(
-                f"Version creation succeeded but response missing containerVersion.path: "
-                f"{create_result}"
-            )
-
-        logger.info("Publishing version: %s", version_name)
-        publish_result = self.service.accounts().containers().versions().publish(
-            path=version_path
-        ).execute()
-
-        logger.info("Version published successfully: %s", version_name)
-        return publish_result

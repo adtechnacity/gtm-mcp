@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import tool_error
+
 
 def _make_mock_client(variable: dict):
     """Build a MagicMock GTM client whose variables().get() returns `variable`
@@ -173,12 +175,11 @@ class TestUpdateGtmVariableValidation:
     async def test_empty_variable_id_returns_error(self):
         from gtm_mcp.write_tools import update_gtm_variable
 
-        result = await update_gtm_variable(
+        message = await tool_error(update_gtm_variable(
             account_id="1", container_id="2", variable_id="",
             javascript="function() {}",
-        )
-        assert result["status"] == "error"
-        assert "variable_id" in result["message"]
+        ))
+        assert "variable_id" in message
 
     @pytest.mark.asyncio
     async def test_nothing_to_update_returns_error(self):
@@ -192,25 +193,23 @@ class TestUpdateGtmVariableValidation:
         with patch("gtm_mcp.write_tools.get_gtm_client", return_value=client), \
              patch("gtm_mcp.write_tools._resolve_workspace_parent",
                    new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
-            result = await update_gtm_variable(
+            message = await tool_error(update_gtm_variable(
                 account_id="1", container_id="2", variable_id="10",
-            )
+            ))
 
-        assert result["status"] == "error"
-        assert "nothing to update" in result["message"].lower()
+        assert "nothing to update" in message.lower()
         variables.update.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_parameters_and_javascript_both_set_returns_error(self):
         from gtm_mcp.write_tools import update_gtm_variable
 
-        result = await update_gtm_variable(
+        message = await tool_error(update_gtm_variable(
             account_id="1", container_id="2", variable_id="10",
             parameters=[{"type": "template", "key": "value", "value": "x"}],
             javascript="function() {}",
-        )
-        assert result["status"] == "error"
-        assert "mutually exclusive" in result["message"].lower()
+        ))
+        assert "mutually exclusive" in message.lower()
 
     @pytest.mark.asyncio
     async def test_javascript_on_non_jsm_variable_returns_error(self):
@@ -224,12 +223,11 @@ class TestUpdateGtmVariableValidation:
         with patch("gtm_mcp.write_tools.get_gtm_client", return_value=client), \
              patch("gtm_mcp.write_tools._resolve_workspace_parent",
                    new=AsyncMock(return_value=("1", "accounts/1/containers/2/workspaces/1"))):
-            result = await update_gtm_variable(
+            message = await tool_error(update_gtm_variable(
                 account_id="1", container_id="2", variable_id="10",
                 javascript="function() {}",
-            )
+            ))
 
-        assert result["status"] == "error"
-        assert "jsm" in result["message"]
-        assert "'v'" in result["message"]
+        assert "jsm" in message
+        assert "'v'" in message
         variables.update.assert_not_called()

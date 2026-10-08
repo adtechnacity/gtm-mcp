@@ -33,3 +33,16 @@ def test_tool_descriptions_only_reference_registered_tools():
         if ref not in registered
     }
     assert not stale, sorted(stale)
+
+
+def test_current_tools_dont_point_at_deprecated_ones():
+    from gtm_mcp import legacy_tools
+    tools = asyncio.run(mcp.list_tools())
+    legacy = {t.name for t in tools if hasattr(legacy_tools, t.name)}
+    stale = {
+        (t.name, ref)
+        for t in tools if t.name not in legacy
+        for ref in TOOL_REF.findall(t.description or "")
+        if ref in legacy
+    }
+    assert not stale, sorted(stale)
