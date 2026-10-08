@@ -16,4 +16,4 @@ fi
 : "${PORT:=8000}"
 export MCP_TRANSPORT HOST PORT
 
-exec python /app/fastmcp_gtm_server.py
+exec mcp-gtm-server

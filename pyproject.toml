@@ -29,19 +29,11 @@ dependencies = [
 ]
 
 [project.scripts]
-mcp-gtm-server = "fastmcp_gtm_server:main"
+mcp-gtm-server = "gtm_mcp.server:main"
+gtm-cli = "gtm_mcp.cli:main"
 
 [tool.hatch.build.targets.wheel]
-packages = ["."]
-exclude = [
-    "__pycache__",
-    "*.pyc",
-    ".git",
-    ".venv",
-    ".pytest_cache",
-    "test_*.py",
-    "tests/",
-]
+packages = ["src/gtm_mcp"]
 
 [project.urls]
 Homepage = "https://github.com/adtechnacity/gtm-mcp"
@@ -52,9 +44,7 @@ Issues = "https://github.com/adtechnacity/gtm-mcp/issues"
 dev = [
     "pytest>=7.0.0",
     "pytest-asyncio>=0.21.0",
-    "black>=23.0.0",
-    "flake8>=6.0.0",
-    "mypy>=1.0.0",
+    "ruff>=0.14.0",
 ]
 
 [tool.ruff]
@@ -62,3 +52,6 @@ target-version = "py310"
 
 [tool.ruff.lint]
 select = ["E4", "E7", "E9", "F", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

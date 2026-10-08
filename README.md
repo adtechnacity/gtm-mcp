@@ -4,9 +4,8 @@ An MCP server that exposes Google Tag Manager API v2 as tools for AI agents like
 
 ## Features
 
-- **40 MCP tools** covering discovery, CRUD, version history, consent management, batch operations, and publishing
-- **Service account authentication** — headless, no browser flow, works in containers
-- **Template builder** for generating GTM component JSON locally
+- **MCP tools** covering discovery, CRUD, version history, consent management, batch operations, and publishing
+- **Service account or OAuth authentication** — service account is headless and works in containers
 - **Batch operations** for bulk consent updates and variable creation
 - **CLI tool** for direct GTM API queries from the command line
 
@@ -73,7 +72,7 @@ Add the server to your MCP client config (Claude Desktop, Claude Code, etc.):
   "mcpServers": {
     "gtm": {
       "command": "uv",
-      "args": ["run", "python", "/path/to/gtm-mcp/fastmcp_gtm_server.py"],
+      "args": ["run", "--directory", "/path/to/gtm-mcp", "mcp-gtm-server"],
       "env": {
         "GOOGLE_APPLICATION_CREDENTIALS": "/path/to/service-account-key.json"
       }
@@ -97,70 +96,10 @@ Or using the installed entry point:
 }
 ```
 
-## Available Tools (40)
+## Tools
 
-### Discovery
-
-- `test_gtm_connection` — Verify service account credentials
-- `list_gtm_accounts` — List all accessible GTM accounts
-- `list_gtm_containers` — List containers in an account
-- `list_gtm_workspaces` — List workspaces in a container
-
-### Reading
-
-- `list_gtm_tags` — List all tags with consent settings
-- `list_gtm_triggers` — List all triggers with filters
-- `list_gtm_variables` — List all variables
-- `get_gtm_tag` — Get full tag details by ID
-- `get_gtm_variable` — Get full variable details by ID (includes the JS source for `jsm` variables)
-
-### Version History
-
-- `list_gtm_container_versions` — List a container's version headers (IDs are monotonic; headers carry no timestamps — date a version via `get_gtm_container_version`)
-- `get_gtm_container_version` — Summarized snapshot of one version (entity counts, slim tag/trigger/variable listings, `fingerprint_datetime`); accepts `version_id="live"`
-- `get_gtm_live_version` — Summarized snapshot of the currently published version
-- `diff_gtm_container_versions` — Server-side field-level diff between two versions (numeric IDs or `"live"`) — added/removed/changed tags, triggers, variables, and built-in variables. Answers "what did publishing version X change"
-
-### Creating
-
-- `create_tag` — Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.)
-- `create_trigger` — Create any GTM trigger type (customEvent, pageview, init, domReady, etc.); optional `filters` adds AND conditions
-- `create_datalayer_variable` — Create a single Data Layer Variable
-- `create_datalayer_variables_batch` — Create multiple Data Layer Variables
-- `create_js_variable` — Create a Custom JavaScript variable (type `jsm`)
-- `create_gtm_variable` — Create a variable of any type (`javascript=` shortcut for `jsm`)
-
-### Modifying
-
-- `update_tag` — Partial in-place tag update (name, parameters, firing/blocking triggers, setup/teardown sequencing, firing option, consent, notes, paused, folder) — keeps the tag ID
-- `update_gtm_variable` — Update a variable in place (name, parameters, notes, folder; `javascript=` shortcut for `jsm`)
-- `set_tags_firing_option_batch` — Bulk set the firing option (`unlimited` / `oncePerEvent` / `oncePerLoad`) on multiple tags
-- `pause_tag` / `unpause_tag` — Toggle a tag's `paused` flag (reversible; no-op if already in that state)
-- `update_tag_consent_settings` — Set consent config for one tag
-- `update_tags_consent_settings_batch` — Set consent config for multiple tags
-- `update_tag_html` — Replace the HTML body of a Custom HTML tag
-- `update_tag_parameters` — Upsert raw GTM `parameter` dicts on any tag by `key` (e.g. add `eventParameters` to a GA4 event tag without recreating it). See [Updating tag parameters](#updating-tag-parameters) below.
-- `update_trigger_parameters` — Overwrite top-level fields on a trigger in place (`name`, `filter`, `customEventFilter`, `autoEventFilter`, `interval`, `limit`, `checkValidation`, `waitForTags`). Keeps the trigger ID stable so consuming tags don't need re-attachment. See [Updating trigger filters](#updating-trigger-filters) below.
-- `update_trigger_filter` — Ergonomic wrapper: replace a trigger's `filter` (or `customEventFilter` / `autoEventFilter`) using `[{operator, lhs, rhs}, ...]` instead of hand-rolling Condition dicts.
-- `add_firing_trigger_to_tags_batch` — Append a firing trigger to multiple tags
-- `add_blocking_trigger_to_tags_batch` — Append a blocking (exception) trigger to multiple tags
-- `set_firing_triggers_on_tags_batch` — Replace the firing-trigger list on multiple tags (useful for migrating between triggers)
-- `remove_firing_trigger_from_tags_batch` — Detach a specific firing trigger from multiple tags
-- `remove_blocking_trigger_from_tags_batch` — Detach a specific blocking trigger from multiple tags
-
-### Deleting
-
-- `delete_tag` — Delete a tag from workspace
-- `delete_gtm_variable` — Delete a variable from workspace
-- `delete_trigger` — Delete a trigger from workspace (detach from tags first to avoid dangling references)
-
-### Publishing
-
-- `publish_gtm_container` — Create version from workspace and publish
-
-### Templates (Local Only)
-
-- `generate_ga4_template` — Generate GA4 tag JSON without API calls
+The full, always-current tool list (checked by `tests/test_docs_tool_list.py`)
+is in [AGENTS.md](AGENTS.md#implemented-tools). Recipes for the less obvious ones:
 
 ### Updating tag parameters
 
@@ -244,13 +183,13 @@ Query GTM directly from the command line (uses the same service account credenti
 ```bash
 export GOOGLE_APPLICATION_CREDENTIALS=/path/to/service-account-key.json
 
-uv run python cli.py list-accounts
-uv run python cli.py list-containers --account_id 123456
-uv run python cli.py list-tags --account_id 123456 --container_id 7890123
-uv run python cli.py list-triggers --account_id 123456 --container_id 7890123
-uv run python cli.py list-variables --account_id 123456 --container_id 7890123
-uv run python cli.py list-workspaces --account_id 123456 --container_id 7890123
-uv run python cli.py get-tag --account_id 123456 --container_id 7890123 --tag_id 42
+uv run gtm-cli list-accounts
+uv run gtm-cli list-containers --account_id 123456
+uv run gtm-cli list-tags --account_id 123456 --container_id 7890123
+uv run gtm-cli list-triggers --account_id 123456 --container_id 7890123
+uv run gtm-cli list-variables --account_id 123456 --container_id 7890123
+uv run gtm-cli list-workspaces --account_id 123456 --container_id 7890123
+uv run gtm-cli get-tag --account_id 123456 --container_id 7890123 --tag_id 42
 ```
 
 ## Usage Examples
@@ -278,30 +217,37 @@ Create a custom HTML tag that loads my tracking script, firing on all pages
 # Using the convenience script
 ./run_server.sh
 
-# Or manually with uv
-uv run python fastmcp_gtm_server.py
+# Or directly
+uv run mcp-gtm-server
+
+# HTTP (hosted) instead of stdio
+MCP_TRANSPORT=streamable-http PORT=8000 uv run mcp-gtm-server
 ```
 
 ## File Structure
 
 ```
 gtm-mcp/
-├── fastmcp_gtm_server.py      # MCP server entry point — 14 read/query tools + main()
-├── fastmcp_gtm_write_tools.py # 19 write tools (imported by server)
-├── fastmcp_gtm_helpers.py     # Shared mcp instance, GTM client, internal helpers
-├── gtm_client_fixed.py        # GTM API client with service account auth
-├── gtm_components.py          # Template builder (no API calls)
-├── cli.py                     # CLI tool (7 read-only subcommands)
-├── pyproject.toml             # Project config & dependencies (locked in uv.lock)
-├── run_server.sh              # Launch script
-├── AGENTS.md                  # AI agent reference & full API coverage
-├── LICENSE                    # MIT
-└── README.md                  # This file
+├── src/gtm_mcp/
+│   ├── server.py        # Entry point (`mcp-gtm-server`): registers tools, picks transport
+│   ├── read_tools.py    # Discovery, read and version-history tools
+│   ├── write_tools.py   # Create/update/delete/publish tools
+│   ├── helpers.py       # Shared `mcp` instance, GTM client, validation, batch + diff helpers
+│   ├── client.py        # Auth (service account / OAuth) and the googleapiclient service
+│   └── cli.py           # `gtm-cli`: read-only subcommands, JSON to stdout
+├── tests/               # pytest, mocked GTM client (no credentials needed)
+├── docs/runbooks/       # As-built notes for specific containers
+├── fastmcp_gtm_server.py  # Back-compat launcher for existing MCP configs
+├── Dockerfile, entrypoint.sh, buildspec.yml  # Hosted (CodeBuild → ECR) image
+└── AGENTS.md            # AI agent reference & GTM API coverage
 ```
 
 ## Authentication
 
-Uses Google Service Account credentials. Set `GOOGLE_APPLICATION_CREDENTIALS` to the path of your service account JSON key file. The service account must be added as a user in GTM with appropriate permissions (Edit + Publish). No browser flow, no token files — works headless in containers.
+Two options, checked in this order:
+
+1. **Service account** — set `GOOGLE_APPLICATION_CREDENTIALS` to the JSON key path. The service account must be a GTM user with Edit + Publish. Headless; this is what the hosted image uses (`GCP_SA_JSON` is written to disk by `entrypoint.sh`).
+2. **OAuth desktop flow** — set `GOOGLE_OAUTH_CLIENT_SECRET` to a Desktop App client secret JSON. Opens a browser once and caches the token in `~/.gtm-mcp/token.json`.
 
 ## AI Agent Reference
 

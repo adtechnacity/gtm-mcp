@@ -10,6 +10,19 @@
 - `set_tags_firing_option_batch`, `pause_tag`, `unpause_tag` tools.
 - `tests/` pytest suite (mocked GTM client): `uv run pytest tests/ -q`.
 
+### Changed
+
+- Code moved into the `src/gtm_mcp/` package (`server`, `read_tools`, `write_tools`, `helpers`, `client`, `cli`). Root `fastmcp_gtm_server.py` stays as a launcher so existing MCP configs keep working; prefer `uv run mcp-gtm-server`. CLI is now `uv run gtm-cli`.
+- All tests under `tests/`; `uv run pytest` needs no paths. Dev tooling is ruff (black/flake8/mypy were unused).
+- `tests/test_docs_tool_list.py` fails when AGENTS.md's tool list drifts from the registered tools.
+- Container-specific as-built docs moved to `docs/runbooks/`.
+
+### Removed
+
+- `generate_ga4_template` tool and `gtm_components.py`: the templates produced JSON GTM rejects (`parameters` dict instead of a `parameter` list, `gtagjs_event` type, `filters` key).
+- Unused `GTMClient` methods (`create_tag`, `create_trigger`, `create_variable`, `get_container`).
+- Plans/specs for already-merged features under `docs/superpowers/`.
+
 ### Fixed
 
 - Docker image now installs from `uv.lock` (`uv sync --frozen`). The old `requirements.txt` (removed) resolved to `mcp` 2.x, which fails to import `FastMCP`, and lacked `google-auth-oauthlib`.

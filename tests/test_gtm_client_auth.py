@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from gtm_client_fixed import GTMClient
+from gtm_mcp.client import GTMClient
 
 
 class TestAuthDetection:
@@ -122,7 +122,7 @@ class TestOAuthTokenCache:
 
     def test_token_saved_to_disk(self, tmp_path):
         """After OAuth flow, token.json is written to token_dir."""
-        from gtm_client_fixed import _save_oauth_token
+        from gtm_mcp.client import _save_oauth_token
 
         mock_creds = MagicMock()
         mock_creds.token = "access-token-123"
@@ -142,14 +142,14 @@ class TestOAuthTokenCache:
 
     def test_load_token_returns_none_if_missing(self, tmp_path):
         """No token file -> returns None."""
-        from gtm_client_fixed import _load_oauth_token
+        from gtm_mcp.client import _load_oauth_token
 
         result = _load_oauth_token(str(tmp_path / "nonexistent.json"))
         assert result is None
 
     def test_load_token_returns_credentials(self, tmp_path):
         """Valid token file -> returns Credentials object."""
-        from gtm_client_fixed import _load_oauth_token
+        from gtm_mcp.client import _load_oauth_token
 
         token_data = {
             "token": "access-token",

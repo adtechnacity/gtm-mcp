@@ -1,7 +1,7 @@
-"""Tests for fastmcp_gtm_helpers validation, consent, and status helpers."""
+"""Tests for gtm_mcp.helpers validation, consent, and status helpers."""
 import pytest
 
-from fastmcp_gtm_helpers import (
+from gtm_mcp.helpers import (
     _validate_gtm_id,
     _validate_ids,
     _validate_consent_params,

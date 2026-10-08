@@ -6,19 +6,19 @@ Reads GOOGLE_APPLICATION_CREDENTIALS from the environment for service account au
 Prints JSON to stdout, errors to stderr.
 
 Usage:
-    uv run python cli.py list-accounts
-    uv run python cli.py list-containers --account_id 123456
-    uv run python cli.py list-tags --account_id 123456 --container_id 7890123
-    uv run python cli.py list-triggers --account_id 123456 --container_id 7890123
-    uv run python cli.py list-variables --account_id 123456 --container_id 7890123
-    uv run python cli.py list-workspaces --account_id 123456 --container_id 7890123
-    uv run python cli.py get-tag --account_id 123456 --container_id 7890123 --tag_id 42
+    uv run gtm-cli list-accounts
+    uv run gtm-cli list-containers --account_id 123456
+    uv run gtm-cli list-tags --account_id 123456 --container_id 7890123
+    uv run gtm-cli list-triggers --account_id 123456 --container_id 7890123
+    uv run gtm-cli list-variables --account_id 123456 --container_id 7890123
+    uv run gtm-cli list-workspaces --account_id 123456 --container_id 7890123
+    uv run gtm-cli get-tag --account_id 123456 --container_id 7890123 --tag_id 42
 """
 import argparse
 import json
 import sys
 
-from gtm_client_fixed import GTMClient
+from gtm_mcp.client import GTMClient
 
 
 # ---------------------------------------------------------------------------

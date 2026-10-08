@@ -32,7 +32,7 @@ def get_gtm_client():
     global gtm_client
     if gtm_client is None:
         try:
-            from gtm_client_fixed import GTMClient
+            from gtm_mcp.client import GTMClient
             gtm_client = GTMClient()
             logger.info("GTM client initialized successfully")
         except Exception as e:
@@ -48,15 +48,6 @@ async def _run(request):
         return {}
     return result
 
-
-# Load GTM components
-try:
-    import gtm_components  # noqa: F401 — availability probe; removed with the templates
-    HAS_GTM_COMPONENTS = True
-    logger.info("GTM components loaded successfully")
-except ImportError as e:
-    logger.error(f"Failed to load GTM components: {e}")
-    HAS_GTM_COMPONENTS = False
 
 
 # ---------------------------------------------------------------------------
