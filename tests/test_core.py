@@ -70,8 +70,8 @@ class TestGtmTool:
     @pytest.mark.asyncio
     async def test_client_sees_is_error(self):
         async with create_connected_server_and_client_session(mcp._mcp_server) as client:
-            failed = await client.call_tool("pause_tag", {
-                "account_id": "bad", "container_id": "2", "tag_id": "1"})
+            failed = await client.call_tool("update_tag", {
+                "account_id": "bad", "container_id": "2", "tag_id": "1", "paused": True})
         assert failed.isError
         assert "account_id" in failed.content[0].text
 

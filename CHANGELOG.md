@@ -24,7 +24,7 @@
   - `create_gtm_variable` gains `datalayer_key=` (replaces `create_datalayer_variable`) and covers `create_js_variable` via `javascript=`.
   - `update_tag` covers `update_tag_consent_settings`, `pause_tag`, `unpause_tag`; `update_tag_parameters` covers `update_tag_html`.
   - `get_gtm_container_version` defaults to `"live"` (replaces `get_gtm_live_version`); `list_gtm_containers` replaces `test_gtm_connection`.
-- **Deprecated aliases** for all 13 old names stay registered for this release with one-line descriptions (`src/gtm_mcp/legacy_tools.py`). `GTM_MCP_LEGACY_TOOLS=0` hides them; they're removed in the next release.
+- The 13 old tool names are gone (no aliases — single-user server). Use the replacements above.
 
 - **Errors are MCP errors now.** Every tool registers through `@gtm_tool`, so failures reach the client with `isError: true` and a short message (`Failed to get tag: HTTP 404: Not found or permission denied.`) instead of a success-shaped `{"status": "error"}` dict. Batch `partial` and pause/unpause `noop` results are unchanged.
 - **Thread-safe API calls.** Requests run on a per-thread `httplib2` connection; the shared one could interleave concurrent tool calls (several users behind one hosted server).
