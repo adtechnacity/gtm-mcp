@@ -1,6 +1,7 @@
 """Deprecated tool names, kept for one release so existing prompts keep working.
 
-Each one delegates to its replacement or keeps its old behavior. They register
+Each one delegates to its replacement and restores the old response shape
+(keys, messages, skip reasons), or keeps its old code outright. They register
 with one-line descriptions to keep tools/list small. Set
 GTM_MCP_LEGACY_TOOLS=0 to hide them; they're removed in the next release.
 """
@@ -19,10 +20,29 @@ def _alias(fn):
     return gtm_tool(f"{fn.__name__} failed")(fn) if ENABLED else fn
 
 
+def _legacy_batch(result, field, label, skip_reason):
+    """Old batch shape: ``label`` instead of the GTM field name, old skip reason."""
+    for entry in result.get("updated", []):
+        if field in entry:
+            entry[label] = entry.pop(field)
+    for entry in result.get("skipped", []):
+        entry["reason"] = skip_reason
+    return result
+
+
 @_alias
 async def test_gtm_connection(account_id: str) -> dict:
     """Deprecated: use ``list_gtm_containers``."""
-    return await read_tools.list_gtm_containers(account_id)
+    result = await read_tools.list_gtm_containers(account_id)
+    containers = result["containers"]
+    return {
+        "status": "success",
+        "message": "GTM API connection successful",
+        "account_id": account_id,
+        "containers_found": len(containers),
+        "containers": [{"name": c.get("name", "Unknown"), "containerId": c.get("containerId", "Unknown")}
+                       for c in containers[:5]],
+    }
 
 
 @_alias
@@ -37,8 +57,9 @@ async def create_js_variable(
     workspace_id: str | None = None,
 ) -> dict:
     """Deprecated: use ``create_gtm_variable`` with ``javascript``."""
-    return await write_tools.create_gtm_variable(
+    result = await write_tools.create_gtm_variable(
         account_id, container_id, variable_name, javascript=javascript, workspace_id=workspace_id)
+    return {**result, "message": f"Custom JavaScript variable '{variable_name}' created successfully"}
 
 
 @_alias
@@ -47,9 +68,11 @@ async def create_datalayer_variable(
     workspace_id: str | None = None,
 ) -> dict:
     """Deprecated: use ``create_gtm_variable`` with ``datalayer_key``."""
-    return await write_tools.create_gtm_variable(
+    result = await write_tools.create_gtm_variable(
         account_id, container_id, variable_name, datalayer_key=datalayer_key,
         workspace_id=workspace_id)
+    return {**result, "datalayer_key": datalayer_key,
+            "message": f"Data Layer Variable '{variable_name}' created successfully"}
 
 
 @_alias
@@ -58,9 +81,11 @@ async def update_tag_consent_settings(
     consent_types: list | None = None, workspace_id: str | None = None,
 ) -> dict:
     """Deprecated: use ``update_tag`` with ``consent_status`` / ``consent_types``."""
-    return await write_tools.update_tag(
+    result = await write_tools.update_tag(
         account_id, container_id, tag_id, consent_status=consent_status,
         consent_types=consent_types, workspace_id=workspace_id)
+    return {**result, "consent_status": consent_status, "consent_types": consent_types or [],
+            "message": f"Consent settings updated for tag '{result.get('tag_name')}'"}
 
 
 @_alias
@@ -69,8 +94,9 @@ async def set_firing_triggers_on_tags_batch(
     workspace_id: str | None = None,
 ) -> dict:
     """Deprecated: use ``update_tags_triggers_batch`` with action="set", kind="firing"."""
-    return await write_tools.update_tags_triggers_batch(
+    result = await write_tools.update_tags_triggers_batch(
         account_id, container_id, tag_ids, "set", trigger_ids, "firing", workspace_id)
+    return _legacy_batch(result, "firingTriggerId", "firing_triggers", "Firing triggers already match")
 
 
 @_alias
@@ -79,8 +105,9 @@ async def add_firing_trigger_to_tags_batch(
     workspace_id: str | None = None,
 ) -> dict:
     """Deprecated: use ``update_tags_triggers_batch`` with action="add", kind="firing"."""
-    return await write_tools.update_tags_triggers_batch(
+    result = await write_tools.update_tags_triggers_batch(
         account_id, container_id, tag_ids, "add", [trigger_id], "firing", workspace_id)
+    return _legacy_batch(result, "firingTriggerId", "firing_triggers", "Trigger already attached")
 
 
 @_alias
@@ -89,8 +116,9 @@ async def add_blocking_trigger_to_tags_batch(
     workspace_id: str | None = None,
 ) -> dict:
     """Deprecated: use ``update_tags_triggers_batch`` with action="add", kind="blocking"."""
-    return await write_tools.update_tags_triggers_batch(
+    result = await write_tools.update_tags_triggers_batch(
         account_id, container_id, tag_ids, "add", [trigger_id], "blocking", workspace_id)
+    return _legacy_batch(result, "blockingTriggerId", "blocking_triggers", "Blocking trigger already attached")
 
 
 @_alias
@@ -99,8 +127,9 @@ async def remove_firing_trigger_from_tags_batch(
     workspace_id: str | None = None,
 ) -> dict:
     """Deprecated: use ``update_tags_triggers_batch`` with action="remove", kind="firing"."""
-    return await write_tools.update_tags_triggers_batch(
+    result = await write_tools.update_tags_triggers_batch(
         account_id, container_id, tag_ids, "remove", [trigger_id], "firing", workspace_id)
+    return _legacy_batch(result, "firingTriggerId", "firing_triggers", "Firing trigger not attached")
 
 
 @_alias
@@ -109,8 +138,9 @@ async def remove_blocking_trigger_from_tags_batch(
     workspace_id: str | None = None,
 ) -> dict:
     """Deprecated: use ``update_tags_triggers_batch`` with action="remove", kind="blocking"."""
-    return await write_tools.update_tags_triggers_batch(
+    result = await write_tools.update_tags_triggers_batch(
         account_id, container_id, tag_ids, "remove", [trigger_id], "blocking", workspace_id)
+    return _legacy_batch(result, "blockingTriggerId", "blocking_triggers", "Blocking trigger not attached")
 
 
 @_alias

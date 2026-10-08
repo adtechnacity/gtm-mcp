@@ -2,6 +2,8 @@
 
 Tools register on the shared ``mcp`` instance from ``gtm_mcp.helpers``.
 """
+import copy
+
 from gtm_mcp.helpers import (
     gtm_tool, get_gtm_client, _run, _forget_workspace,
     MAX_BATCH_SIZE,
@@ -1015,7 +1017,8 @@ async def update_tag(
     """Update an existing GTM tag in place (partial update).
 
     Fetches the tag, mutates only the fields you passed, then writes it back
-    with fingerprint concurrency. Preserves the tag's ID so every reference to
+    with fingerprint concurrency — or returns status "noop" without writing
+    when the tag already has those values. Preserves the tag's ID so every reference to
     it (including tag-sequencing links) keeps working. Any field left as
     ``None`` is untouched; pass ``firing_trigger_ids=[]`` to explicitly clear a
     tag's own firing triggers (e.g. a tag that should fire only via sequencing).
@@ -1081,6 +1084,7 @@ async def update_tag(
         client.service.accounts().containers().workspaces().tags().get(path=path)
     )
 
+    original = copy.deepcopy(tag)
     updated_fields: list[str] = []
 
     if name is not None:
@@ -1121,6 +1125,15 @@ async def update_tag(
         tag["parentFolderId"] = parent_folder_id
         updated_fields.append("parent_folder_id")
 
+    if tag == original:
+        return {
+            "status": "noop",
+            "message": f"Tag '{tag.get('name')}' already matches; nothing written",
+            "tag_id": tag_id,
+            "tag_name": tag.get("name"),
+            "tag_type": tag.get("type"),
+            "updated_fields": [],
+        }
     updated = await _run(
         client.service.accounts().containers().workspaces().tags().update(
             path=path, body=tag, fingerprint=tag.get("fingerprint"),
