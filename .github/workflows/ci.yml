@@ -1,0 +1,38 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.10", "3.12"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          version: "0.11.7"
+          python-version: ${{ matrix.python-version }}
+      - run: uv sync --frozen
+      - run: uv run ruff check .
+      - run: uv run pytest -q
+
+  # Builds the same image CodeBuild ships, so a broken Dockerfile or dependency
+  # set fails the PR instead of the hosted server.
+  docker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t gtm-mcp:ci .
+      - name: Server imports and lists tools inside the image
+        run: >
+          docker run --rm --entrypoint python gtm-mcp:ci -c
+          "import asyncio; from gtm_mcp.server import mcp;
+          n = len(asyncio.run(mcp.list_tools())); print(n, 'tools'); assert n > 0"
