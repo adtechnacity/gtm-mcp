@@ -9,12 +9,14 @@ import copy
 import functools
 import json
 import logging
+import random
 import sys
 import threading
 import time
 from datetime import datetime, timezone
 
 import google_auth_httplib2
+from googleapiclient.errors import HttpError
 from googleapiclient.http import build_http
 from mcp.server import FastMCP
 from mcp.server.fastmcp.exceptions import ToolError
@@ -54,7 +56,25 @@ def get_gtm_client():
 _thread_local = threading.local()
 
 
+# Backoff for HTTP 429. GTM's quota is per minute per user, so the waits add
+# up to about a minute. Only 429 is retried: the request wasn't processed, so
+# it's safe even for creates (a 5xx might have been).
+_RETRY_DELAYS = (2, 4, 8, 16, 30)
+
+
 def _execute(request):
+    """Execute ``request``, retrying on GTM's per-minute quota (429)."""
+    for delay in (*_RETRY_DELAYS, None):
+        try:
+            return _execute_once(request)
+        except HttpError as e:
+            if delay is None or getattr(e.resp, "status", None) != 429:
+                raise
+            logger.warning("GTM API quota exceeded (429); retrying in %ss", delay)
+            time.sleep(delay + random.uniform(0, 1))
+
+
+def _execute_once(request):
     """Execute on this worker thread's own connection.
 
     httplib2.Http isn't thread-safe, and every request built from the shared
@@ -442,6 +462,76 @@ async def _modify_tag_triggers_batch(client, path_prefix, tag_ids, trigger_ids, 
         extra_fields_fn=lambda t: {field: t.get(field, [])},
         skip_reason="No change",
     )
+
+
+# ---------------------------------------------------------------------------
+# Reference search — pure functions over workspace entities
+# ---------------------------------------------------------------------------
+
+_ENTITY_ID_FIELDS = {"tag": "tagId", "trigger": "triggerId", "variable": "variableId"}
+
+
+def _matching_paths(value, match, path=""):
+    """Paths of every string inside ``value`` for which ``match(s)`` is true.
+
+    Dicts are addressed by key (``consentSettings.consentStatus``); list
+    entries by their GTM parameter ``key`` when they have one
+    (``parameter[html]``), else by index.
+    """
+    if isinstance(value, str):
+        return [path] if match(value) else []
+    if isinstance(value, dict):
+        return [p for k, v in value.items()
+                for p in _matching_paths(v, match, f"{path}.{k}" if path else k)]
+    if isinstance(value, list):
+        out = []
+        for i, item in enumerate(value):
+            key = item.get("key") if isinstance(item, dict) else None
+            out += _matching_paths(item, match, f"{path}[{key if isinstance(key, str) else i}]")
+        return out
+    return []
+
+
+def _find_references(kind, target, tags, triggers, variables):
+    """Entities that use ``target`` (a tag, trigger, or variable resource).
+
+    - trigger: tags firing on / blocked by its ID, and trigger groups containing it.
+    - variable: any string containing ``{{<name>}}`` in tags, triggers, other variables.
+    - tag: tags that sequence it (setupTag / teardownTag by name).
+
+    Returns ``[{"kind", "id", "name", "where": [field paths]}, ...]``.
+    """
+    entities = (("tag", tags), ("trigger", triggers), ("variable", variables))
+    target_id = target.get(_ENTITY_ID_FIELDS[kind])
+    refs = []
+
+    def add(ref_kind, entity, where):
+        if where:
+            refs.append({"kind": ref_kind, "id": entity.get(_ENTITY_ID_FIELDS[ref_kind]),
+                         "name": entity.get("name"), "where": where})
+
+    if kind == "trigger":
+        for tag in tags:
+            add("tag", tag, [f for f in ("firingTriggerId", "blockingTriggerId")
+                             if target_id in tag.get(f, [])])
+        for trigger in triggers:
+            if trigger.get("type") == "triggerGroup" and trigger.get("triggerId") != target_id:
+                add("trigger", trigger, _matching_paths(
+                    trigger.get("parameter", []), lambda s: s == target_id, "parameter"))
+    elif kind == "variable":
+        token = "{{" + target.get("name", "") + "}}"
+        for ref_kind, items in entities:
+            for entity in items:
+                if ref_kind == "variable" and entity.get("variableId") == target_id:
+                    continue
+                add(ref_kind, entity, _matching_paths(entity, lambda s: token in s))
+    else:
+        name = target.get("name")
+        for tag in tags:
+            if tag.get("tagId") != target_id:
+                add("tag", tag, [f for f in ("setupTag", "teardownTag")
+                                 if any(x.get("tagName") == name for x in tag.get(f, []))])
+    return refs
 
 # ---------------------------------------------------------------------------
 # Version history helpers — pure functions over ContainerVersion resources
