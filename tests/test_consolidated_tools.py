@@ -185,11 +185,14 @@ class TestLegacyAliases:
             assert "\n" not in t.description.strip(), t.name
 
     def test_env_flag_hides_them(self):
+        from gtm_mcp.server import mcp
+        names = {t.name for t in asyncio.run(mcp.list_tools())}
+        current = sorted(n for n in names if not hasattr(legacy_tools, n))
         code = ("import asyncio; from gtm_mcp.server import mcp; "
-                "print(len(asyncio.run(mcp.list_tools())))")
+                "print(sorted(t.name for t in asyncio.run(mcp.list_tools())))")
         out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
                              env={**os.environ, "GTM_MCP_LEGACY_TOOLS": "0"}, check=True)
-        assert out.stdout.strip() == "27"
+        assert out.stdout.strip() == str(current)
 
 
 # ---------------------------------------------------------------------------

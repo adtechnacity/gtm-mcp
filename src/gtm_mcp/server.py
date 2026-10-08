@@ -6,7 +6,7 @@ for hosted deployments.
 import argparse
 import os
 
-from gtm_mcp import legacy_tools, read_tools, write_tools  # noqa: F401 — registers tools on `mcp`
+from gtm_mcp import legacy_tools, lifecycle_tools, read_tools, write_tools  # noqa: F401 — registers tools on `mcp`
 from gtm_mcp.helpers import logger, mcp
 
 VALID_TRANSPORTS = ("stdio", "sse", "streamable-http")

@@ -4,6 +4,13 @@
 
 ### Added
 
+- **Review before publishing / rollback:** `create_gtm_version` (version from a workspace, not published) and `publish_gtm_version` (publish any existing version — an older one is a rollback). `publish_gtm_container` now shares their code (moved to `lifecycle_tools`).
+- **Workspaces:** `create_gtm_workspace`, `get_gtm_workspace_status` (pending changes + merge conflicts), `sync_gtm_workspace`.
+- `revert_gtm_entity` — undo a workspace's changes to one tag / trigger / variable.
+- `get_gtm_trigger`.
+- `find_gtm_references` — what uses a trigger (firing/blocking, trigger groups; built-ins like All Pages included), a variable (`{{Name}}` anywhere, with field paths), or a tag (setup/teardown).
+- API calls retry HTTP 429 (GTM's per-minute-per-user quota) with backoff up to ~1 min, so long batches don't fail halfway. Other errors are not retried.
+
 - `create_gtm_variable` tool — create a variable of any type via `variables.create`; `javascript=` builds a Custom JavaScript (`jsm`) variable.
 - `get_gtm_variable` and `update_gtm_variable` tools — read / partially update a variable in place (`javascript=` shortcut for `jsm`).
 - `update_tag` tool — partial in-place tag update (name, parameters, firing/blocking triggers, setup/teardown sequencing, firing option, consent, notes, paused, folder); keeps the tag ID.

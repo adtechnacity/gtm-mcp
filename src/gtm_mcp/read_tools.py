@@ -9,6 +9,7 @@ from gtm_mcp.helpers import (
     gtm_tool, get_gtm_client, _run,
     _validate_ids, _paginated_list, _resolve_workspace_parent,
     _fingerprint_to_iso, _summarize_version, _diff_versions,
+    _ENTITY_ID_FIELDS, _find_references,
 )
 
 
@@ -312,6 +313,96 @@ async def list_gtm_triggers(account_id: str, container_id: str, workspace_id: st
             }
             for t in triggers
         ]
+    }
+
+
+@gtm_tool("Failed to get trigger")
+async def get_gtm_trigger(
+    account_id: str, container_id: str, trigger_id: str, workspace_id: str | None = None,
+) -> dict:
+    """Get full details of one trigger: type, filters, auto-event settings, parameters.
+
+    Built-in triggers such as All Pages (ID 2147479553) aren't workspace
+    resources and return 404; ``find_gtm_references`` still works for them.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        trigger_id: The trigger ID to retrieve
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    error = _validate_ids(account_id=account_id, container_id=container_id, trigger_id=trigger_id)
+    if error:
+        return {"status": "error", "message": error}
+
+    client = get_gtm_client()
+    _, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+    trigger = await _run(client.service.accounts().containers().workspaces().triggers().get(
+        path=f"{ws_parent}/triggers/{trigger_id}"))
+    return {"status": "success", "trigger": trigger}
+
+
+_REFERENCE_COLLECTIONS = {"tag": "tags", "trigger": "triggers", "variable": "variables"}
+
+
+@gtm_tool("Failed to find references")
+async def find_gtm_references(
+    account_id: str,
+    container_id: str,
+    kind: str,
+    entity_id: str,
+    workspace_id: str | None = None,
+) -> dict:
+    """Find everything in a workspace that uses a trigger, variable, or tag.
+
+    Run before deleting or renaming — GTM's API doesn't stop you from leaving
+    dangling references, and renaming a variable through the API does NOT
+    rewrite ``{{Old Name}}`` where it's used.
+
+    - ``kind="trigger"``: tags firing on or blocked by it; trigger groups containing it.
+    - ``kind="variable"``: every ``{{Name}}`` use in tags, triggers, and other variables
+      (custom JS, HTML, filters, parameters), with the field path.
+    - ``kind="tag"``: tags that sequence it (setup / teardown).
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        kind: "trigger", "variable", or "tag"
+        entity_id: ID of the entity to look up
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    if kind not in _REFERENCE_COLLECTIONS:
+        return {"status": "error", "message": f"kind must be one of {list(_REFERENCE_COLLECTIONS)}, got '{kind}'"}
+    error = _validate_ids(account_id=account_id, container_id=container_id, entity_id=entity_id)
+    if error:
+        return {"status": "error", "message": error}
+
+    client = get_gtm_client()
+    _, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+    ws = client.service.accounts().containers().workspaces()
+
+    def lister(collection):
+        return lambda **kw: getattr(ws, collection)().list(parent=parent, **kw)
+
+    tags, triggers, variables = await asyncio.gather(
+        _paginated_list(lister("tags"), "tag"),
+        _paginated_list(lister("triggers"), "trigger"),
+        _paginated_list(lister("variables"), "variable"),
+    )
+    pool = {"tag": tags, "trigger": triggers, "variable": variables}[kind]
+    id_field = _ENTITY_ID_FIELDS[kind]
+    target = next((e for e in pool if e.get(id_field) == entity_id), None)
+    if target is None:
+        if kind != "trigger":
+            return {"status": "error", "message": f"{kind.capitalize()} {entity_id} not found in this workspace."}
+        # Built-in triggers (All Pages = 2147479553, …) aren't workspace resources.
+        target = {"triggerId": entity_id, "name": "(built-in trigger)"}
+    refs = _find_references(kind, target, tags, triggers, variables)
+    return {
+        "status": "success",
+        "target": {"kind": kind, "id": target.get(_ENTITY_ID_FIELDS[kind]), "name": target.get("name")},
+        "total_references": len(refs),
+        "references": refs,
     }
 
 

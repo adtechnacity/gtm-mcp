@@ -120,6 +120,34 @@ class TestExecute:
         req.execute.assert_called_once_with()
 
 
+class TestQuotaRetry:
+    def _request(self, *outcomes):
+        req = MagicMock()
+        req.execute.side_effect = list(outcomes)
+        return req
+
+    def test_retries_429_then_succeeds(self):
+        req = self._request(_http_error(429, "Quota exceeded"), {"ok": True})
+        with patch("gtm_mcp.helpers.time.sleep") as sleep:
+            assert _execute(req) == {"ok": True}
+        assert sleep.call_count == 1
+        assert sleep.call_args.args[0] >= helpers._RETRY_DELAYS[0]
+
+    def test_gives_up_after_all_delays(self):
+        errors = [_http_error(429, "Quota exceeded")] * (len(helpers._RETRY_DELAYS) + 1)
+        req = self._request(*errors)
+        with patch("gtm_mcp.helpers.time.sleep") as sleep, pytest.raises(HttpError):
+            _execute(req)
+        assert sleep.call_count == len(helpers._RETRY_DELAYS)
+
+    @pytest.mark.parametrize("status", [404, 500, 503])
+    def test_other_errors_are_not_retried(self, status):
+        req = self._request(_http_error(status, "nope"), {"ok": True})
+        with patch("gtm_mcp.helpers.time.sleep") as sleep, pytest.raises(HttpError):
+            _execute(req)
+        sleep.assert_not_called()
+
+
 # ---------------------------------------------------------------------------
 # Workspace resolution
 # ---------------------------------------------------------------------------
@@ -213,11 +241,11 @@ class TestPublish:
         return client, versions
 
     async def _publish(self, client):
-        from gtm_mcp.write_tools import publish_gtm_container
-        with patch("gtm_mcp.write_tools.get_gtm_client", return_value=client), \
-             patch("gtm_mcp.write_tools._resolve_workspace_parent",
+        from gtm_mcp.lifecycle_tools import publish_gtm_container
+        with patch("gtm_mcp.lifecycle_tools.get_gtm_client", return_value=client), \
+             patch("gtm_mcp.lifecycle_tools._resolve_workspace_parent",
                    new=AsyncMock(return_value=("54", "accounts/1/containers/2/workspaces/54"))), \
-             patch("gtm_mcp.write_tools._forget_workspace") as forget:
+             patch("gtm_mcp.lifecycle_tools._forget_workspace") as forget:
             return await publish_gtm_container("1", "2", "v88"), forget
 
     @pytest.mark.asyncio
