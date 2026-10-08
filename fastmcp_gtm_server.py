@@ -2,7 +2,7 @@
 """
 FastMCP GTM Server — MCP server exposing Google Tag Manager API v2 as tools.
 
-Provides 18 tools for managing GTM accounts, containers, workspaces, tags,
+Provides 19 tools for managing GTM accounts, containers, workspaces, tags,
 triggers, variables, consent settings, and publishing. Uses Google Service
 Account credentials via gtm_client_fixed.GTMClient for authentication.
 

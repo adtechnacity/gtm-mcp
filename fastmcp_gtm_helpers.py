@@ -168,6 +168,17 @@ def _validate_consent_params(consent_status, consent_types):
     return None
 
 
+_VALID_FIRING_OPTIONS = ("unlimited", "oncePerEvent", "oncePerLoad")
+
+
+def _validate_firing_option(firing_option):
+    """Return error message string, or None if valid."""
+    if firing_option not in _VALID_FIRING_OPTIONS:
+        return (f"Invalid firing_option '{firing_option}'. Must be one of "
+                "'unlimited', 'oncePerEvent', 'oncePerLoad'.")
+    return None
+
+
 def _build_consent_settings(consent_status, consent_types):
     """Build GTM consentSettings dict from validated parameters."""
     settings = {"consentStatus": consent_status}

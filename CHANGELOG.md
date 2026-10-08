@@ -5,6 +5,13 @@
 ### Added
 - `pause_tag` and `unpause_tag` tools — toggle a tag's `paused` flag via `tags.update`, preserving every other field (uses fingerprint for optimistic concurrency). Returns `status="noop"` if the tag is already in the requested state.
 - `get_gtm_variable` tool — full variable resource via `variables.get`, including the JS source for JS Macro (`jsm`) variables.
+- `update_tag` tool — partial in-place tag update via `tags.update` (name, parameters, firing/blocking triggers, setup/teardown tag sequencing, firing option, consent, notes, paused, folder). Preserves the tag ID so sequencing references keep working; `firing_trigger_ids=[]` clears a tag's own triggers.
+- `set_tags_firing_option_batch` tool — bulk set `tagFiringOption` (`unlimited` / `oncePerEvent` / `oncePerLoad`) across many tags, skipping tags already on the target option.
+- `delete_gtm_trigger` tool — delete a trigger via `triggers.delete`, refusing when any tag still references it as a firing or blocking trigger (returns `code="referenced"` with the referencing tags) unless `force=True`.
+- `delete_tag` tool — delete a tag via `tags.delete`, refusing unpaused tags (`code="not_paused"`) unless `force=True`, to keep the pause-first workflow.
+- `delete_gtm_variable` tool — delete a variable via `variables.delete`.
+- `update_gtm_variable` tool — update a variable in place (name, parameters, notes, parent folder) with a `javascript=` shortcut for `jsm` variables.
+- `create_trigger` now supports all common trigger types (`customEvent`, `linkClick`, `click`, `pageview`, `domReady`, `windowLoaded`, `formSubmission`, `historyChange`, `jsError`) with a friendly filter DSL.
 
 ## [0.1.1] - 2026-03-04
 

@@ -4,7 +4,7 @@ An MCP server that exposes Google Tag Manager API v2 as tools for AI agents like
 
 ## Features
 
-- **22 MCP tools** covering discovery, CRUD, consent management, pause/unpause, batch operations, and publishing
+- **26 MCP tools** covering discovery, CRUD, consent management, pause/unpause, batch operations, and publishing
 - **Service account authentication** — headless, no browser flow, works in containers
 - **Template builder** for generating GTM component JSON locally
 - **Batch operations** for bulk consent updates and variable creation
@@ -100,7 +100,7 @@ Or using the installed entry point:
 }
 ```
 
-## Available Tools (22)
+## Available Tools (26)
 
 ### Discovery
 - `test_gtm_connection` — Verify service account credentials
@@ -123,14 +123,18 @@ Or using the installed entry point:
 
 ### Modifying
 - `update_gtm_variable` — Update a GTM variable in place (name, parameters, notes, parent folder; `javascript=` shortcut for jsm variables)
+- `update_tag` — Partial in-place tag update (name, parameters, firing/blocking triggers, setup/teardown sequencing, firing option, consent, notes, paused, folder) — keeps the tag ID
 - `update_tag_consent_settings` — Set consent config for one tag
 - `update_tags_consent_settings_batch` — Set consent config for multiple tags
 - `add_firing_trigger_to_tags_batch` — Add a trigger to multiple tags
+- `set_tags_firing_option_batch` — Bulk set the firing option (`unlimited` / `oncePerEvent` / `oncePerLoad`) on multiple tags
 - `pause_tag` — Pause a tag so it stops firing (reversible, no-op if already paused)
 - `unpause_tag` — Unpause a previously paused tag
 
 ### Deleting
 - `delete_gtm_variable` — Delete a variable from workspace
+- `delete_tag` — Delete a tag; refuses unpaused tags unless `force=True` (pause-first workflow)
+- `delete_gtm_trigger` — Delete a trigger; refuses if any tag references it as firing/blocking unless `force=True`
 
 ### Publishing
 - `publish_gtm_container` — Create version from workspace and publish
