@@ -5,7 +5,7 @@ Tools register on the shared ``mcp`` instance from ``gtm_mcp.helpers``.
 import copy
 
 from gtm_mcp.helpers import (
-    gtm_tool, get_gtm_client, _run, _forget_workspace,
+    gtm_tool, get_gtm_client, _run,
     MAX_BATCH_SIZE,
     _create_datalayer_var,
     _validate_consent_params, _build_consent_settings,
@@ -107,55 +107,6 @@ async def create_tag(
         "tag_name": name,
         "tag_type": tag_type,
         "path": result.get("path"),
-    }
-
-
-# ---------------------------------------------------------------------------
-# Publish
-# ---------------------------------------------------------------------------
-
-@gtm_tool("Failed to publish container")
-async def publish_gtm_container(account_id: str, container_id: str, version_name: str, version_notes: str = "Published via MCP", workspace_id: str | None = None) -> dict:
-    """Publish GTM container version. Creates a version from the workspace and publishes it.
-
-    Two-step process: first creates a version from the workspace
-    (tagmanager.accounts.containers.workspaces.create_version), then publishes it
-    (tagmanager.accounts.containers.versions.publish). This makes all workspace
-    changes live.
-
-    Args:
-        account_id: GTM Account ID
-        container_id: GTM Container ID
-        version_name: Name for the new version
-        version_notes: Optional notes describing the version changes
-        workspace_id: GTM Workspace ID to publish from (auto-detected if omitted). Use list_gtm_workspaces to find the correct workspace.
-    """
-    error = _validate_ids(account_id=account_id, container_id=container_id)
-    if error:
-        return {"status": "error", "message": error}
-
-    client = get_gtm_client()
-    workspace_id, ws_path = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
-
-    created = await _run(client.service.accounts().containers().workspaces().create_version(
-        path=ws_path, body={"name": version_name, "notes": version_notes}))
-    version_path = created.get("containerVersion", {}).get("path")
-    if not version_path:
-        # No version means GTM refused: compiler errors or an unresolved merge conflict.
-        problems = {k: created[k] for k in ("compilerError", "syncStatus") if created.get(k)}
-        return {"status": "error",
-                "message": f"Workspace {workspace_id} did not produce a version: {problems or created}"}
-    result = await _run(client.service.accounts().containers().versions().publish(path=version_path))
-    _forget_workspace(account_id, container_id)
-
-    version = result.get("containerVersion", {})
-    return {
-        "status": "success",
-        "message": f"Container {container_id} published successfully",
-        "version_name": version_name,
-        "version_notes": version_notes,
-        "version_id": version.get("containerVersionId"),
-        "path": version.get("path"),
     }
 
 
