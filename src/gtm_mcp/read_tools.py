@@ -6,7 +6,7 @@ shared ``mcp`` instance from ``gtm_mcp.helpers``.
 import asyncio
 
 from gtm_mcp.helpers import (
-    mcp, get_gtm_client, _run,
+    gtm_tool, get_gtm_client, _run,
     _validate_ids, _paginated_list, _resolve_workspace_parent,
     _fingerprint_to_iso, _summarize_version, _diff_versions,
 )
@@ -16,7 +16,7 @@ from gtm_mcp.helpers import (
 # Read / query tools
 # ---------------------------------------------------------------------------
 
-@mcp.tool()
+@gtm_tool("GTM connection failed")
 async def test_gtm_connection(account_id: str) -> dict:
     """Test GTM API connection and authentication.
 
@@ -27,28 +27,25 @@ async def test_gtm_connection(account_id: str) -> dict:
     Args:
         account_id: GTM Account ID (numeric string, e.g. "123456")
     """
-    try:
-        error = _validate_ids(account_id=account_id)
-        if error:
-            return {"status": "error", "message": error}
+    error = _validate_ids(account_id=account_id)
+    if error:
+        return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        containers = await asyncio.to_thread(client.list_containers, account_id)
+    client = get_gtm_client()
+    containers = await _paginated_list(
+        lambda **kw: client.service.accounts().containers().list(parent=f"accounts/{account_id}", **kw),
+        'container'
+    )
 
-        return {
-            "status": "success",
-            "message": "GTM API connection successful",
-            "account_id": account_id,
-            "containers_found": len(containers),
-            "containers": [{"name": c.get("name", "Unknown"), "containerId": c.get("containerId", "Unknown")} for c in containers[:5]]
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"GTM connection failed: {str(e)}"
-        }
+    return {
+        "status": "success",
+        "message": "GTM API connection successful",
+        "account_id": account_id,
+        "containers_found": len(containers),
+        "containers": [{"name": c.get("name", "Unknown"), "containerId": c.get("containerId", "Unknown")} for c in containers[:5]]
+    }
 
-@mcp.tool()
+@gtm_tool("Failed to list containers")
 async def list_gtm_containers(account_id: str) -> dict:
     """List all GTM containers in an account.
 
@@ -59,27 +56,24 @@ async def list_gtm_containers(account_id: str) -> dict:
     Args:
         account_id: GTM Account ID (numeric string)
     """
-    try:
-        error = _validate_ids(account_id=account_id)
-        if error:
-            return {"status": "error", "message": error}
+    error = _validate_ids(account_id=account_id)
+    if error:
+        return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        containers = await asyncio.to_thread(client.list_containers, account_id)
+    client = get_gtm_client()
+    containers = await _paginated_list(
+        lambda **kw: client.service.accounts().containers().list(parent=f"accounts/{account_id}", **kw),
+        'container'
+    )
 
-        return {
-            "status": "success",
-            "account_id": account_id,
-            "total_containers": len(containers),
-            "containers": containers
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to list containers: {str(e)}"
-        }
+    return {
+        "status": "success",
+        "account_id": account_id,
+        "total_containers": len(containers),
+        "containers": containers
+    }
 
-@mcp.tool()
+@gtm_tool("Failed to list accounts")
 async def list_gtm_accounts() -> dict:
     """List all GTM accounts the authenticated user has access to.
 
@@ -87,33 +81,27 @@ async def list_gtm_accounts() -> dict:
     This is typically the first discovery call — use the returned account IDs
     with list_gtm_containers to find containers.
     """
-    try:
-        client = get_gtm_client()
+    client = get_gtm_client()
 
-        result = await _run(client.service.accounts().list())
+    result = await _run(client.service.accounts().list())
 
-        accounts = result.get('account', [])
+    accounts = result.get('account', [])
 
-        return {
-            "status": "success",
-            "total_accounts": len(accounts),
-            "accounts": [
-                {
-                    "name": a.get('name'),
-                    "accountId": a.get('accountId'),
-                    "path": a.get('path')
-                }
-                for a in accounts
-            ]
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to list accounts: {str(e)}"
-        }
+    return {
+        "status": "success",
+        "total_accounts": len(accounts),
+        "accounts": [
+            {
+                "name": a.get('name'),
+                "accountId": a.get('accountId'),
+                "path": a.get('path')
+            }
+            for a in accounts
+        ]
+    }
 
 
-@mcp.tool()
+@gtm_tool("Failed to list workspaces")
 async def list_gtm_workspaces(account_id: str, container_id: str) -> dict:
     """List all workspaces in a GTM container.
 
@@ -125,39 +113,33 @@ async def list_gtm_workspaces(account_id: str, container_id: str) -> dict:
         account_id: GTM Account ID
         container_id: GTM Container ID
     """
-    try:
-        error = _validate_ids(account_id=account_id, container_id=container_id)
-        if error:
-            return {"status": "error", "message": error}
+    error = _validate_ids(account_id=account_id, container_id=container_id)
+    if error:
+        return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        parent = f"accounts/{account_id}/containers/{container_id}"
+    client = get_gtm_client()
+    parent = f"accounts/{account_id}/containers/{container_id}"
 
-        workspaces = await _paginated_list(
-            lambda **kw: client.service.accounts().containers().workspaces().list(parent=parent, **kw),
-            'workspace'
-        )
+    workspaces = await _paginated_list(
+        lambda **kw: client.service.accounts().containers().workspaces().list(parent=parent, **kw),
+        'workspace'
+    )
 
-        return {
-            "status": "success",
-            "total_workspaces": len(workspaces),
-            "workspaces": [
-                {
-                    "name": w.get('name'),
-                    "workspaceId": w.get('workspaceId'),
-                    "description": w.get('description', '')
-                }
-                for w in workspaces
-            ]
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to list workspaces: {str(e)}"
-        }
+    return {
+        "status": "success",
+        "total_workspaces": len(workspaces),
+        "workspaces": [
+            {
+                "name": w.get('name'),
+                "workspaceId": w.get('workspaceId'),
+                "description": w.get('description', '')
+            }
+            for w in workspaces
+        ]
+    }
 
-@mcp.tool()
-async def list_gtm_variables(account_id: str, container_id: str, workspace_id: str = "1") -> dict:
+@gtm_tool("Failed to list variables")
+async def list_gtm_variables(account_id: str, container_id: str, workspace_id: str | None = None) -> dict:
     """List all variables in a GTM workspace.
 
     Calls tagmanager.accounts.containers.workspaces.variables.list.
@@ -168,39 +150,33 @@ async def list_gtm_variables(account_id: str, container_id: str, workspace_id: s
         container_id: GTM Container ID
         workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
-    try:
-        error = _validate_ids(account_id=account_id, container_id=container_id)
-        if error:
-            return {"status": "error", "message": error}
+    error = _validate_ids(account_id=account_id, container_id=container_id)
+    if error:
+        return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+    client = get_gtm_client()
+    workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
-        variables = await _paginated_list(
-            lambda **kw: client.service.accounts().containers().workspaces().variables().list(parent=parent, **kw),
-            'variable'
-        )
+    variables = await _paginated_list(
+        lambda **kw: client.service.accounts().containers().workspaces().variables().list(parent=parent, **kw),
+        'variable'
+    )
 
-        return {
-            "status": "success",
-            "total_variables": len(variables),
-            "variables": [
-                {
-                    "name": v.get('name'),
-                    "type": v.get('type'),
-                    "variableId": v.get('variableId')
-                }
-                for v in variables
-            ]
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to list variables: {str(e)}"
-        }
+    return {
+        "status": "success",
+        "total_variables": len(variables),
+        "variables": [
+            {
+                "name": v.get('name'),
+                "type": v.get('type'),
+                "variableId": v.get('variableId')
+            }
+            for v in variables
+        ]
+    }
 
-@mcp.tool()
-async def list_gtm_tags(account_id: str, container_id: str, workspace_id: str = "1") -> dict:
+@gtm_tool("Failed to list tags")
+async def list_gtm_tags(account_id: str, container_id: str, workspace_id: str | None = None) -> dict:
     """List all tags in a GTM workspace, including their consent settings.
 
     Calls tagmanager.accounts.containers.workspaces.tags.list.
@@ -213,58 +189,52 @@ async def list_gtm_tags(account_id: str, container_id: str, workspace_id: str = 
         container_id: GTM Container ID
         workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
-    try:
-        error = _validate_ids(account_id=account_id, container_id=container_id)
-        if error:
-            return {"status": "error", "message": error}
+    error = _validate_ids(account_id=account_id, container_id=container_id)
+    if error:
+        return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+    client = get_gtm_client()
+    workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
-        tags = await _paginated_list(
-            lambda **kw: client.service.accounts().containers().workspaces().tags().list(parent=parent, **kw),
-            'tag'
-        )
+    tags = await _paginated_list(
+        lambda **kw: client.service.accounts().containers().workspaces().tags().list(parent=parent, **kw),
+        'tag'
+    )
 
-        def parse_consent_settings(tag):
-            cs = tag.get('consentSettings', {})
-            consent_status = cs.get('consentStatus', 'notSet')
-            consent_type_param = cs.get('consentType', {})
-            if consent_type_param.get('type') == 'list':
-                consent_types = [item.get('value', '') for item in consent_type_param.get('list', [])]
-            else:
-                consent_types = []
-            return {
-                "consentStatus": consent_status,
-                "consentTypes": consent_types
+    def parse_consent_settings(tag):
+        cs = tag.get('consentSettings', {})
+        consent_status = cs.get('consentStatus', 'notSet')
+        consent_type_param = cs.get('consentType', {})
+        if consent_type_param.get('type') == 'list':
+            consent_types = [item.get('value', '') for item in consent_type_param.get('list', [])]
+        else:
+            consent_types = []
+        return {
+            "consentStatus": consent_status,
+            "consentTypes": consent_types
+        }
+
+    return {
+        "status": "success",
+        "total_tags": len(tags),
+        "tags": [
+            {
+                "name": t.get('name'),
+                "type": t.get('type'),
+                "tagId": t.get('tagId'),
+                "paused": t.get('paused', False),
+                "firingTriggerId": t.get('firingTriggerId', []),
+                "blockingTriggerId": t.get('blockingTriggerId', []),
+                "consentSettings": parse_consent_settings(t),
+                "tagManagerUrl": t.get('tagManagerUrl', '')
             }
-
-        return {
-            "status": "success",
-            "total_tags": len(tags),
-            "tags": [
-                {
-                    "name": t.get('name'),
-                    "type": t.get('type'),
-                    "tagId": t.get('tagId'),
-                    "paused": t.get('paused', False),
-                    "firingTriggerId": t.get('firingTriggerId', []),
-                    "blockingTriggerId": t.get('blockingTriggerId', []),
-                    "consentSettings": parse_consent_settings(t),
-                    "tagManagerUrl": t.get('tagManagerUrl', '')
-                }
-                for t in tags
-            ]
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to list tags: {str(e)}"
-        }
+            for t in tags
+        ]
+    }
 
 
-@mcp.tool()
-async def get_gtm_tag(account_id: str, container_id: str, tag_id: str, workspace_id: str = "1") -> dict:
+@gtm_tool("Failed to get tag")
+async def get_gtm_tag(account_id: str, container_id: str, tag_id: str, workspace_id: str | None = None) -> dict:
     """Get full details of a specific GTM tag, including all parameters and consent settings.
 
     Calls tagmanager.accounts.containers.workspaces.tags.get.
@@ -277,36 +247,30 @@ async def get_gtm_tag(account_id: str, container_id: str, tag_id: str, workspace
         tag_id: The tag ID to retrieve
         workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
-    try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
-        if error:
-            return {"status": "error", "message": error}
+    error = _validate_ids(account_id=account_id, container_id=container_id, tag_id=tag_id)
+    if error:
+        return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        workspace_id, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
-        path = f"{ws_parent}/tags/{tag_id}"
+    client = get_gtm_client()
+    workspace_id, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+    path = f"{ws_parent}/tags/{tag_id}"
 
-        tag = await _run(client.service.accounts().containers().workspaces().tags().get(
-            path=path
-        ))
+    tag = await _run(client.service.accounts().containers().workspaces().tags().get(
+        path=path
+    ))
 
-        return {
-            "status": "success",
-            "tag": tag
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to get tag: {str(e)}"
-        }
+    return {
+        "status": "success",
+        "tag": tag
+    }
 
 
-@mcp.tool()
+@gtm_tool("Failed to get variable")
 async def get_gtm_variable(
     account_id: str,
     container_id: str,
     variable_id: str,
-    workspace_id: str = "1",
+    workspace_id: str | None = None,
 ) -> dict:
     """Get full details of a specific GTM variable, including its parameters.
 
@@ -321,30 +285,27 @@ async def get_gtm_variable(
         variable_id: The variable ID to retrieve
         workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
-    try:
-        error = _validate_ids(
-            account_id=account_id, container_id=container_id, variable_id=variable_id
-        )
-        if error:
-            return {"status": "error", "message": error}
+    error = _validate_ids(
+        account_id=account_id, container_id=container_id, variable_id=variable_id
+    )
+    if error:
+        return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        workspace_id, ws_parent = await _resolve_workspace_parent(
-            client, account_id, container_id, workspace_id
-        )
-        path = f"{ws_parent}/variables/{variable_id}"
+    client = get_gtm_client()
+    workspace_id, ws_parent = await _resolve_workspace_parent(
+        client, account_id, container_id, workspace_id
+    )
+    path = f"{ws_parent}/variables/{variable_id}"
 
-        variable = await _run(
-            client.service.accounts().containers().workspaces().variables().get(path=path)
-        )
+    variable = await _run(
+        client.service.accounts().containers().workspaces().variables().get(path=path)
+    )
 
-        return {"status": "success", "variable": variable}
-    except Exception as e:
-        return {"status": "error", "message": f"Failed to get variable: {str(e)}"}
+    return {"status": "success", "variable": variable}
 
 
-@mcp.tool()
-async def list_gtm_triggers(account_id: str, container_id: str, workspace_id: str = "1") -> dict:
+@gtm_tool("Failed to list triggers")
+async def list_gtm_triggers(account_id: str, container_id: str, workspace_id: str | None = None) -> dict:
     """List all triggers in a GTM workspace.
 
     Calls tagmanager.accounts.containers.workspaces.triggers.list.
@@ -355,38 +316,32 @@ async def list_gtm_triggers(account_id: str, container_id: str, workspace_id: st
         container_id: GTM Container ID
         workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
-    try:
-        error = _validate_ids(account_id=account_id, container_id=container_id)
-        if error:
-            return {"status": "error", "message": error}
+    error = _validate_ids(account_id=account_id, container_id=container_id)
+    if error:
+        return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+    client = get_gtm_client()
+    workspace_id, parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
 
-        triggers = await _paginated_list(
-            lambda **kw: client.service.accounts().containers().workspaces().triggers().list(parent=parent, **kw),
-            'trigger'
-        )
+    triggers = await _paginated_list(
+        lambda **kw: client.service.accounts().containers().workspaces().triggers().list(parent=parent, **kw),
+        'trigger'
+    )
 
-        return {
-            "status": "success",
-            "total_triggers": len(triggers),
-            "triggers": [
-                {
-                    "name": t.get('name'),
-                    "type": t.get('type'),
-                    "triggerId": t.get('triggerId'),
-                    "filter": t.get('filter', []),
-                    "customEventFilter": t.get('customEventFilter', [])
-                }
-                for t in triggers
-            ]
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to list triggers: {str(e)}"
-        }
+    return {
+        "status": "success",
+        "total_triggers": len(triggers),
+        "triggers": [
+            {
+                "name": t.get('name'),
+                "type": t.get('type'),
+                "triggerId": t.get('triggerId'),
+                "filter": t.get('filter', []),
+                "customEventFilter": t.get('customEventFilter', [])
+            }
+            for t in triggers
+        ]
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +383,7 @@ async def _get_version_summary(account_id: str, container_id: str, version_id: s
     }
 
 
-@mcp.tool()
+@gtm_tool("Failed to list container versions")
 async def list_gtm_container_versions(account_id: str, container_id: str, include_deleted: bool = False) -> dict:
     """List all container version headers (the container's publish history).
 
@@ -443,43 +398,37 @@ async def list_gtm_container_versions(account_id: str, container_id: str, includ
         container_id: GTM Container ID
         include_deleted: Also include deleted versions (default False)
     """
-    try:
-        error = _validate_ids(account_id=account_id, container_id=container_id)
-        if error:
-            return {"status": "error", "message": error}
+    error = _validate_ids(account_id=account_id, container_id=container_id)
+    if error:
+        return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        parent = f"accounts/{account_id}/containers/{container_id}"
+    client = get_gtm_client()
+    parent = f"accounts/{account_id}/containers/{container_id}"
 
-        headers = await _paginated_list(
-            lambda **kw: client.service.accounts().containers().version_headers().list(
-                parent=parent, includeDeleted=include_deleted, **kw),
-            'containerVersionHeader'
-        )
+    headers = await _paginated_list(
+        lambda **kw: client.service.accounts().containers().version_headers().list(
+            parent=parent, includeDeleted=include_deleted, **kw),
+        'containerVersionHeader'
+    )
 
-        return {
-            "status": "success",
-            "total_versions": len(headers),
-            "versions": [
-                {
-                    "containerVersionId": h.get('containerVersionId'),
-                    "name": h.get('name'),
-                    "numTags": h.get('numTags'),
-                    "numTriggers": h.get('numTriggers'),
-                    "numVariables": h.get('numVariables'),
-                    "deleted": h.get('deleted', False)
-                }
-                for h in headers
-            ]
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to list container versions: {str(e)}"
-        }
+    return {
+        "status": "success",
+        "total_versions": len(headers),
+        "versions": [
+            {
+                "containerVersionId": h.get('containerVersionId'),
+                "name": h.get('name'),
+                "numTags": h.get('numTags'),
+                "numTriggers": h.get('numTriggers'),
+                "numVariables": h.get('numVariables'),
+                "deleted": h.get('deleted', False)
+            }
+            for h in headers
+        ]
+    }
 
 
-@mcp.tool()
+@gtm_tool("Failed to get container version")
 async def get_gtm_container_version(account_id: str, container_id: str, version_id: str) -> dict:
     """Get a summarized snapshot of a specific GTM container version.
 
@@ -494,16 +443,10 @@ async def get_gtm_container_version(account_id: str, container_id: str, version_
         container_id: GTM Container ID
         version_id: Container version ID, or "live" for the published version
     """
-    try:
-        return await _get_version_summary(account_id, container_id, version_id)
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to get container version: {str(e)}"
-        }
+    return await _get_version_summary(account_id, container_id, version_id)
 
 
-@mcp.tool()
+@gtm_tool("Failed to get live version")
 async def get_gtm_live_version(account_id: str, container_id: str) -> dict:
     """Get a summarized snapshot of the currently published (live) container version.
 
@@ -516,16 +459,10 @@ async def get_gtm_live_version(account_id: str, container_id: str) -> dict:
         account_id: GTM Account ID
         container_id: GTM Container ID
     """
-    try:
-        return await _get_version_summary(account_id, container_id, "live")
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to get live version: {str(e)}"
-        }
+    return await _get_version_summary(account_id, container_id, "live")
 
 
-@mcp.tool()
+@gtm_tool("Failed to diff container versions")
 async def diff_gtm_container_versions(account_id: str, container_id: str, from_version_id: str, to_version_id: str = "live") -> dict:
     """Diff two GTM container versions field-by-field, server-side.
 
@@ -544,44 +481,37 @@ async def diff_gtm_container_versions(account_id: str, container_id: str, from_v
         from_version_id: Baseline version ID, or "live"
         to_version_id: Target version ID, or "live" (default)
     """
-    try:
-        error = _validate_ids(account_id=account_id, container_id=container_id)
+    error = _validate_ids(account_id=account_id, container_id=container_id)
+    if error:
+        return {"status": "error", "message": error}
+    for name, version_id in (("from_version_id", from_version_id), ("to_version_id", to_version_id)):
+        error = _validate_version_id(name, version_id)
         if error:
             return {"status": "error", "message": error}
-        for name, version_id in (("from_version_id", from_version_id), ("to_version_id", to_version_id)):
-            error = _validate_version_id(name, version_id)
-            if error:
-                return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        # Sequential on purpose: the googleapiclient service shares one
-        # httplib2.Http, which is not thread-safe — concurrent _run calls
-        # (asyncio.to_thread) could interleave on the same socket.
-        from_version = await _fetch_version(client, account_id, container_id, from_version_id)
-        to_version = await _fetch_version(client, account_id, container_id, to_version_id)
+    client = get_gtm_client()
+    from_version, to_version = await asyncio.gather(
+        _fetch_version(client, account_id, container_id, from_version_id),
+        _fetch_version(client, account_id, container_id, to_version_id),
+    )
 
-        def identity(version):
-            return {
-                "containerVersionId": version.get("containerVersionId"),
-                "name": version.get("name"),
-                "fingerprint_datetime": _fingerprint_to_iso(version.get("fingerprint")),
-            }
-
+    def identity(version):
         return {
-            "status": "success",
-            "from": identity(from_version),
-            "to": identity(to_version),
-            **_diff_versions(from_version, to_version)
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to diff container versions: {str(e)}"
+            "containerVersionId": version.get("containerVersionId"),
+            "name": version.get("name"),
+            "fingerprint_datetime": _fingerprint_to_iso(version.get("fingerprint")),
         }
 
+    return {
+        "status": "success",
+        "from": identity(from_version),
+        "to": identity(to_version),
+        **_diff_versions(from_version, to_version)
+    }
 
-@mcp.tool()
-async def delete_gtm_variable(account_id: str, container_id: str, variable_id: str, workspace_id: str = "1") -> dict:
+
+@gtm_tool("Failed to delete variable")
+async def delete_gtm_variable(account_id: str, container_id: str, variable_id: str, workspace_id: str | None = None) -> dict:
     """Delete a variable from a GTM workspace.
 
     Calls tagmanager.accounts.containers.workspaces.variables.delete.
@@ -594,25 +524,19 @@ async def delete_gtm_variable(account_id: str, container_id: str, variable_id: s
         variable_id: The variable ID to delete
         workspace_id: GTM Workspace ID (auto-detected if omitted)
     """
-    try:
-        error = _validate_ids(account_id=account_id, container_id=container_id, variable_id=variable_id)
-        if error:
-            return {"status": "error", "message": error}
+    error = _validate_ids(account_id=account_id, container_id=container_id, variable_id=variable_id)
+    if error:
+        return {"status": "error", "message": error}
 
-        client = get_gtm_client()
-        workspace_id, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
-        path = f"{ws_parent}/variables/{variable_id}"
+    client = get_gtm_client()
+    workspace_id, ws_parent = await _resolve_workspace_parent(client, account_id, container_id, workspace_id)
+    path = f"{ws_parent}/variables/{variable_id}"
 
-        await _run(client.service.accounts().containers().workspaces().variables().delete(
-            path=path
-        ))
+    await _run(client.service.accounts().containers().workspaces().variables().delete(
+        path=path
+    ))
 
-        return {
-            "status": "success",
-            "message": f"Variable {variable_id} deleted successfully"
-        }
-    except Exception as e:
-        return {
-            "status": "error",
-            "message": f"Failed to delete variable: {str(e)}"
-        }
+    return {
+        "status": "success",
+        "message": f"Variable {variable_id} deleted successfully"
+    }

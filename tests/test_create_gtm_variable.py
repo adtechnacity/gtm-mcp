@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import tool_error
+
 WS_PARENT = "accounts/1/containers/2/workspaces/54"
 
 
@@ -71,8 +73,12 @@ class TestCreateGtmVariable:
         ({"name": "", "javascript": "f"}, "name"),
     ])
     async def test_invalid_input_never_calls_api(self, kwargs, fragment):
-        result, variables = await _call(**kwargs)
+        from gtm_mcp.write_tools import create_gtm_variable
 
-        assert result["status"] == "error"
-        assert fragment in result["message"]
+        client, variables = _make_mock_client()
+        with patch("gtm_mcp.write_tools.get_gtm_client", return_value=client):
+            message = await tool_error(create_gtm_variable(
+                account_id="1", container_id="2", workspace_id="54", **kwargs))
+
+        assert fragment in message
         variables.create.assert_not_called()

@@ -13,8 +13,11 @@ Package `src/gtm_mcp/`:
 | `client.py`      | `GTMClient` — service account or OAuth auth, builds the `tagmanager` v2 service          |
 | `cli.py`         | `gtm-cli` — read-only subcommands, prints JSON to stdout                                 |
 
-Tools call `client.service` (googleapiclient) directly through `helpers._run`,
-which runs the blocking request in a thread. Root `fastmcp_gtm_server.py` is
+Tools register with `@gtm_tool("<failure prefix>")` (helpers), which turns
+returned `{"status": "error"}` dicts and exceptions into MCP errors. They call
+`client.service` (googleapiclient) through `helpers._run`, which runs the
+blocking request in a thread on that thread's own connection (`httplib2.Http`
+isn't thread-safe). Root `fastmcp_gtm_server.py` is
 only a back-compat launcher for existing MCP configs.
 
 ## ID Hierarchy
@@ -30,7 +33,20 @@ accounts/{accountId}
               └── variables/{variableId}
 ```
 
-Most tools require `account_id` + `container_id`. Some also need `workspace_id` (defaults to `"1"`).
+Most tools require `account_id` + `container_id`. Workspace-scoped tools take an
+optional `workspace_id`; when omitted they use the workspace named "Default
+Workspace" (its ID changes after each publish from it), or the only workspace.
+With several workspaces and no default they fail and list the IDs. The
+resolution is cached 5 minutes and dropped on publish. `"1"` (the old default)
+still works and keeps workspace 1 if it exists.
+
+## Errors
+
+Failures are MCP errors (`isError: true`), with text like
+`Failed to update tag: HTTP 404: Not found or permission denied.` Successful
+results are dicts with `status: "success"`; batch tools may return
+`status: "partial"` with per-item `updated` / `skipped` / `failed` lists, and
+pause/unpause return `status: "noop"` when nothing changed.
 
 ## Environment Variables
 

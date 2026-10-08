@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import tool_error
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -47,23 +49,21 @@ class TestValidation:
     async def test_invalid_firing_option_returns_error(self):
         from gtm_mcp.write_tools import set_tags_firing_option_batch
 
-        result = await set_tags_firing_option_batch(
+        message = await tool_error(set_tags_firing_option_batch(
             account_id="1", container_id="2", tag_ids=["100"],
             firing_option="oncePerWeek",
-        )
-        assert result["status"] == "error"
-        assert "firing_option" in result["message"]
+        ))
+        assert "firing_option" in message
 
     @pytest.mark.asyncio
     async def test_invalid_account_id_returns_error(self):
         from gtm_mcp.write_tools import set_tags_firing_option_batch
 
-        result = await set_tags_firing_option_batch(
+        message = await tool_error(set_tags_firing_option_batch(
             account_id="bad", container_id="2", tag_ids=["100"],
             firing_option="oncePerLoad",
-        )
-        assert result["status"] == "error"
-        assert "account_id" in result["message"]
+        ))
+        assert "account_id" in message
 
 
 # ---------------------------------------------------------------------------

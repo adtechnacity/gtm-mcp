@@ -3,6 +3,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from conftest import tool_error
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -158,17 +160,15 @@ class TestPauseTagTool:
     async def test_invalid_account_id_returns_error(self):
         from gtm_mcp.write_tools import pause_tag
 
-        result = await pause_tag(account_id="bad", container_id="2", tag_id="100")
-        assert result["status"] == "error"
-        assert "account_id" in result["message"]
+        message = await tool_error(pause_tag(account_id="bad", container_id="2", tag_id="100"))
+        assert "account_id" in message
 
     @pytest.mark.asyncio
     async def test_invalid_tag_id_returns_error(self):
         from gtm_mcp.write_tools import pause_tag
 
-        result = await pause_tag(account_id="1", container_id="2", tag_id="")
-        assert result["status"] == "error"
-        assert "tag_id" in result["message"]
+        message = await tool_error(pause_tag(account_id="1", container_id="2", tag_id=""))
+        assert "tag_id" in message
 
     @pytest.mark.asyncio
     async def test_pause_tag_calls_set_paused_true(self):
@@ -244,8 +244,7 @@ class TestGetGtmVariable:
     async def test_invalid_variable_id_returns_error(self):
         from gtm_mcp.read_tools import get_gtm_variable
 
-        result = await get_gtm_variable(
+        message = await tool_error(get_gtm_variable(
             account_id="1", container_id="2", variable_id="bad"
-        )
-        assert result["status"] == "error"
-        assert "variable_id" in result["message"]
+        ))
+        assert "variable_id" in message
