@@ -16,35 +16,6 @@ from gtm_mcp.helpers import (
 # Read / query tools
 # ---------------------------------------------------------------------------
 
-@gtm_tool("GTM connection failed")
-async def test_gtm_connection(account_id: str) -> dict:
-    """Test GTM API connection and authentication.
-
-    Verifies service account credentials are valid by listing containers in the given account.
-    Returns connection status and up to 5 container names. Use this to confirm
-    credentials work before running other tools.
-
-    Args:
-        account_id: GTM Account ID (numeric string, e.g. "123456")
-    """
-    error = _validate_ids(account_id=account_id)
-    if error:
-        return {"status": "error", "message": error}
-
-    client = get_gtm_client()
-    containers = await _paginated_list(
-        lambda **kw: client.service.accounts().containers().list(parent=f"accounts/{account_id}", **kw),
-        'container'
-    )
-
-    return {
-        "status": "success",
-        "message": "GTM API connection successful",
-        "account_id": account_id,
-        "containers_found": len(containers),
-        "containers": [{"name": c.get("name", "Unknown"), "containerId": c.get("containerId", "Unknown")} for c in containers[:5]]
-    }
-
 @gtm_tool("Failed to list containers")
 async def list_gtm_containers(account_id: str) -> dict:
     """List all GTM containers in an account.
@@ -429,7 +400,7 @@ async def list_gtm_container_versions(account_id: str, container_id: str, includ
 
 
 @gtm_tool("Failed to get container version")
-async def get_gtm_container_version(account_id: str, container_id: str, version_id: str) -> dict:
+async def get_gtm_container_version(account_id: str, container_id: str, version_id: str = "live") -> dict:
     """Get a summarized snapshot of a specific GTM container version.
 
     Calls tagmanager.accounts.containers.versions.get (or versions.live when
@@ -441,25 +412,9 @@ async def get_gtm_container_version(account_id: str, container_id: str, version_
     Args:
         account_id: GTM Account ID
         container_id: GTM Container ID
-        version_id: Container version ID, or "live" for the published version
+        version_id: Container version ID, or "live" (default) for the published version
     """
     return await _get_version_summary(account_id, container_id, version_id)
-
-
-@gtm_tool("Failed to get live version")
-async def get_gtm_live_version(account_id: str, container_id: str) -> dict:
-    """Get a summarized snapshot of the currently published (live) container version.
-
-    Calls tagmanager.accounts.containers.versions.live. Same summary shape as
-    get_gtm_container_version: identity fields, entity counts, slim
-    tag/trigger/variable listings, and fingerprint_datetime (publish-time
-    storage timestamp, ISO 8601 UTC).
-
-    Args:
-        account_id: GTM Account ID
-        container_id: GTM Container ID
-    """
-    return await _get_version_summary(account_id, container_id, "live")
 
 
 @gtm_tool("Failed to diff container versions")
