@@ -4,7 +4,7 @@ An MCP server that exposes Google Tag Manager API v2 as tools for AI agents like
 
 ## Features
 
-- **27 MCP tools** covering discovery, CRUD, consent management, pause/unpause, batch operations, and publishing
+- **40 MCP tools** covering discovery, CRUD, version history, consent management, batch operations, and publishing
 - **Service account authentication** — headless, no browser flow, works in containers
 - **Template builder** for generating GTM component JSON locally
 - **Batch operations** for bulk consent updates and variable creation
@@ -58,6 +58,7 @@ gcloud services enable tagmanager.googleapis.com --project=YOUR_PROJECT_ID
 #### Grant GTM Access
 
 Add the service account email (e.g. `gtm-mcp@YOUR_PROJECT_ID.iam.gserviceaccount.com`) as a user in GTM:
+
 - Go to GTM > Admin > Account > User Management
 - Add the service account email with **Edit** and **Publish** permissions
 
@@ -100,48 +101,145 @@ Or using the installed entry point:
 }
 ```
 
-## Available Tools (27)
+## Available Tools (40)
 
 ### Discovery
+
 - `test_gtm_connection` — Verify service account credentials
 - `list_gtm_accounts` — List all accessible GTM accounts
 - `list_gtm_containers` — List containers in an account
 - `list_gtm_workspaces` — List workspaces in a container
 
 ### Reading
+
 - `list_gtm_tags` — List all tags with consent settings
 - `list_gtm_triggers` — List all triggers with filters
 - `list_gtm_variables` — List all variables
 - `get_gtm_tag` — Get full tag details by ID
-- `get_gtm_variable` — Get full variable details by ID (incl. JS source for `jsm` variables)
+- `get_gtm_variable` — Get full variable details by ID (includes the JS source for `jsm` variables)
+
+### Version History
+
+- `list_gtm_container_versions` — List a container's version headers (IDs are monotonic; headers carry no timestamps — date a version via `get_gtm_container_version`)
+- `get_gtm_container_version` — Summarized snapshot of one version (entity counts, slim tag/trigger/variable listings, `fingerprint_datetime`); accepts `version_id="live"`
+- `get_gtm_live_version` — Summarized snapshot of the currently published version
+- `diff_gtm_container_versions` — Server-side field-level diff between two versions (numeric IDs or `"live"`) — added/removed/changed tags, triggers, variables, and built-in variables. Answers "what did publishing version X change"
 
 ### Creating
+
 - `create_tag` — Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.)
-- `create_trigger` — Create a GTM trigger of any supported type (customEvent, linkClick, click, pageview, domReady, windowLoaded, formSubmission, historyChange, jsError) with a friendly filter DSL
-- `create_gtm_variable` — Create a variable of any type (`javascript=` shortcut for Custom JavaScript)
+- `create_trigger` — Create any GTM trigger type (customEvent, pageview, init, domReady, etc.); optional `filters` adds AND conditions
 - `create_datalayer_variable` — Create a single Data Layer Variable
 - `create_datalayer_variables_batch` — Create multiple Data Layer Variables
+- `create_js_variable` — Create a Custom JavaScript variable (type `jsm`)
+- `create_gtm_variable` — Create a variable of any type (`javascript=` shortcut for `jsm`)
 
 ### Modifying
-- `update_gtm_variable` — Update a GTM variable in place (name, parameters, notes, parent folder; `javascript=` shortcut for jsm variables)
+
 - `update_tag` — Partial in-place tag update (name, parameters, firing/blocking triggers, setup/teardown sequencing, firing option, consent, notes, paused, folder) — keeps the tag ID
+- `update_gtm_variable` — Update a variable in place (name, parameters, notes, folder; `javascript=` shortcut for `jsm`)
+- `set_tags_firing_option_batch` — Bulk set the firing option (`unlimited` / `oncePerEvent` / `oncePerLoad`) on multiple tags
+- `pause_tag` / `unpause_tag` — Toggle a tag's `paused` flag (reversible; no-op if already in that state)
 - `update_tag_consent_settings` — Set consent config for one tag
 - `update_tags_consent_settings_batch` — Set consent config for multiple tags
-- `add_firing_trigger_to_tags_batch` — Add a trigger to multiple tags
-- `set_tags_firing_option_batch` — Bulk set the firing option (`unlimited` / `oncePerEvent` / `oncePerLoad`) on multiple tags
-- `pause_tag` — Pause a tag so it stops firing (reversible, no-op if already paused)
-- `unpause_tag` — Unpause a previously paused tag
+- `update_tag_html` — Replace the HTML body of a Custom HTML tag
+- `update_tag_parameters` — Upsert raw GTM `parameter` dicts on any tag by `key` (e.g. add `eventParameters` to a GA4 event tag without recreating it). See [Updating tag parameters](#updating-tag-parameters) below.
+- `update_trigger_parameters` — Overwrite top-level fields on a trigger in place (`name`, `filter`, `customEventFilter`, `autoEventFilter`, `interval`, `limit`, `checkValidation`, `waitForTags`). Keeps the trigger ID stable so consuming tags don't need re-attachment. See [Updating trigger filters](#updating-trigger-filters) below.
+- `update_trigger_filter` — Ergonomic wrapper: replace a trigger's `filter` (or `customEventFilter` / `autoEventFilter`) using `[{operator, lhs, rhs}, ...]` instead of hand-rolling Condition dicts.
+- `add_firing_trigger_to_tags_batch` — Append a firing trigger to multiple tags
+- `add_blocking_trigger_to_tags_batch` — Append a blocking (exception) trigger to multiple tags
+- `set_firing_triggers_on_tags_batch` — Replace the firing-trigger list on multiple tags (useful for migrating between triggers)
+- `remove_firing_trigger_from_tags_batch` — Detach a specific firing trigger from multiple tags
+- `remove_blocking_trigger_from_tags_batch` — Detach a specific blocking trigger from multiple tags
 
 ### Deleting
+
+- `delete_tag` — Delete a tag from workspace
 - `delete_gtm_variable` — Delete a variable from workspace
-- `delete_tag` — Delete a tag; refuses unpaused tags unless `force=True` (pause-first workflow)
-- `delete_gtm_trigger` — Delete a trigger; refuses if any tag references it as firing/blocking unless `force=True`
+- `delete_trigger` — Delete a trigger from workspace (detach from tags first to avoid dangling references)
 
 ### Publishing
+
 - `publish_gtm_container` — Create version from workspace and publish
 
 ### Templates (Local Only)
+
 - `generate_ga4_template` — Generate GA4 tag JSON without API calls
+
+### Updating tag parameters
+
+`update_tag_parameters` is the generic edit path for any tag's `parameter` array. Each item must be a complete GTM parameter dict — same shape `get_gtm_tag` returns. Items are upserted by their `key` field; everything else on the tag is left alone.
+
+**Add or change `eventParameters` on a GA4 event tag (`gaawe`) without recreating it:**
+
+1. Read the tag with `get_gtm_tag` to see the current `eventParameters` (a `list`-typed parameter whose `list` is a sequence of `map` items, each with inner `name`/`value` keys).
+2. Build the merged list locally (append a new map for each new parameter, replace inner maps to overwrite).
+3. Call `update_tag_parameters` with one entry whose `key` is `eventParameters` and whose `list` is the merged sequence:
+
+```json
+{
+  "key": "eventParameters",
+  "type": "list",
+  "list": [
+    {
+      "type": "map",
+      "map": [
+        { "key": "name", "type": "template", "value": "item_id" },
+        { "key": "value", "type": "template", "value": "{{DLV - item_id}}" }
+      ]
+    },
+    {
+      "type": "map",
+      "map": [
+        { "key": "name", "type": "template", "value": "currency" },
+        { "key": "value", "type": "template", "value": "USD" }
+      ]
+    }
+  ]
+}
+```
+
+The whole `eventParameters` list is replaced atomically — read-then-merge locally rather than calling the tool twice. Other top-level params (`eventName`, `measurementIdOverride`, `userProperties`, etc.) are untouched.
+
+### Updating trigger filters
+
+`update_trigger_parameters` rewrites top-level fields on a trigger without changing the trigger ID. The most common use is widening or narrowing a trigger's `filter` conditions as a route/URL pattern evolves — useful because the alternative (delete + recreate) yields a new trigger ID that breaks every consuming tag's `firingTriggerId` list.
+
+**Widen "Add to Cart Navigate" from `Page Path contains /create` to a regex matching `/create` or `/studio`:**
+
+```python
+update_trigger_parameters(
+    account_id="6332661990",
+    container_id="239933263",
+    workspace_id="136",
+    trigger_id="7",
+    fields={
+        "filter": [{
+            "type": "matchRegex",
+            "parameter": [
+                {"type": "template", "key": "arg0", "value": "{{Page Path}}"},
+                {"type": "template", "key": "arg1", "value": "/(create|studio)(?:[?/]|$)"},
+            ],
+        }],
+    },
+)
+```
+
+Or with the ergonomic wrapper:
+
+```python
+update_trigger_filter(
+    account_id="6332661990",
+    container_id="239933263",
+    workspace_id="136",
+    trigger_id="7",
+    conditions=[
+        {"operator": "matchRegex", "lhs": "{{Page Path}}", "rhs": "/(create|studio)(?:[?/]|$)"},
+    ],
+)
+```
+
+List-valued fields (`filter`, `customEventFilter`, `autoEventFilter`) replace wholesale — pass `[]` to clear. Pass `None` for any _optional_ key to remove it from the trigger; `name` is required by GTM and rejects `None` (omit the key to leave it unchanged). Keys not in `fields` are preserved. A missing trigger surfaces as a clear 404; a fingerprint mismatch surfaces as a 409 mentioning the workspace and trigger ID.
 
 ## CLI Tool
 
@@ -192,8 +290,8 @@ uv run python fastmcp_gtm_server.py
 
 ```
 gtm-mcp/
-├── fastmcp_gtm_server.py      # MCP server entry point — 11 read/query tools + main()
-├── fastmcp_gtm_write_tools.py # 12 write tools (imported by server)
+├── fastmcp_gtm_server.py      # MCP server entry point — 14 read/query tools + main()
+├── fastmcp_gtm_write_tools.py # 19 write tools (imported by server)
 ├── fastmcp_gtm_helpers.py     # Shared mcp instance, GTM client, internal helpers
 ├── gtm_client_fixed.py        # GTM API client with service account auth
 ├── gtm_components.py          # Template builder (no API calls)
@@ -213,6 +311,7 @@ Uses Google Service Account credentials. Set `GOOGLE_APPLICATION_CREDENTIALS` to
 ## AI Agent Reference
 
 See [AGENTS.md](AGENTS.md) for:
+
 - Full GTM API v2 endpoint reference (105 methods across 18 resource families)
 - Implementation status of each endpoint
 - Common workflow patterns

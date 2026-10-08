@@ -2,9 +2,10 @@
 """
 FastMCP GTM Server — MCP server exposing Google Tag Manager API v2 as tools.
 
-Provides 19 tools for managing GTM accounts, containers, workspaces, tags,
-triggers, variables, consent settings, and publishing. Uses Google Service
-Account credentials via gtm_client_fixed.GTMClient for authentication.
+Provides 40 tools for managing GTM accounts, containers, workspaces, tags,
+triggers, variables, version history, consent settings, and publishing. Uses
+Google Service Account credentials via gtm_client_fixed.GTMClient for
+authentication.
 
 Read tools are defined here; write tools are in fastmcp_gtm_write_tools.
 Shared helpers live in fastmcp_gtm_helpers.
@@ -18,12 +19,15 @@ Run directly:
 Or via entry point:
     mcp-gtm-server
 """
+import argparse
 import asyncio
+import os
 
 from fastmcp_gtm_helpers import (
     mcp, get_gtm_client, _run, logger,
     HAS_GTM_COMPONENTS,
     _validate_ids, _paginated_list, _resolve_workspace_parent,
+    _fingerprint_to_iso, _summarize_version, _diff_versions,
 )
 
 try:
@@ -412,6 +416,197 @@ async def list_gtm_triggers(account_id: str, container_id: str, workspace_id: st
         }
 
 
+# ---------------------------------------------------------------------------
+# Version history tools
+# ---------------------------------------------------------------------------
+
+async def _fetch_version(client, account_id: str, container_id: str, version_id: str) -> dict:
+    """Fetch a raw ContainerVersion — a numeric version_id or the special "live"."""
+    parent = f"accounts/{account_id}/containers/{container_id}"
+    if version_id == "live":
+        return await _run(client.service.accounts().containers().versions().live(parent=parent))
+    return await _run(client.service.accounts().containers().versions().get(
+        path=f"{parent}/versions/{version_id}"
+    ))
+
+
+def _validate_version_id(name: str, version_id: str):
+    """Validate a version_id parameter that also accepts the special value "live"."""
+    if version_id == "live":
+        return None
+    return _validate_ids(**{name: version_id})
+
+
+async def _get_version_summary(account_id: str, container_id: str, version_id: str) -> dict:
+    """Shared fetch+summarize path for get_gtm_container_version / get_gtm_live_version."""
+    error = _validate_ids(account_id=account_id, container_id=container_id)
+    if error:
+        return {"status": "error", "message": error}
+    error = _validate_version_id("version_id", version_id)
+    if error:
+        return {"status": "error", "message": error}
+
+    client = get_gtm_client()
+    version = await _fetch_version(client, account_id, container_id, version_id)
+
+    return {
+        "status": "success",
+        "version": _summarize_version(version)
+    }
+
+
+@mcp.tool()
+async def list_gtm_container_versions(account_id: str, container_id: str, include_deleted: bool = False) -> dict:
+    """List all container version headers (the container's publish history).
+
+    Calls tagmanager.accounts.containers.version_headers.list.
+    Returns each version's ID, name, entity counts, and deleted flag. Version
+    IDs are monotonically increasing — higher ID means created later. Headers
+    carry no timestamps; use get_gtm_container_version and read
+    fingerprint_datetime to date a specific version.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        include_deleted: Also include deleted versions (default False)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id)
+        if error:
+            return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        parent = f"accounts/{account_id}/containers/{container_id}"
+
+        headers = await _paginated_list(
+            lambda **kw: client.service.accounts().containers().version_headers().list(
+                parent=parent, includeDeleted=include_deleted, **kw),
+            'containerVersionHeader'
+        )
+
+        return {
+            "status": "success",
+            "total_versions": len(headers),
+            "versions": [
+                {
+                    "containerVersionId": h.get('containerVersionId'),
+                    "name": h.get('name'),
+                    "numTags": h.get('numTags'),
+                    "numTriggers": h.get('numTriggers'),
+                    "numVariables": h.get('numVariables'),
+                    "deleted": h.get('deleted', False)
+                }
+                for h in headers
+            ]
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to list container versions: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def get_gtm_container_version(account_id: str, container_id: str, version_id: str) -> dict:
+    """Get a summarized snapshot of a specific GTM container version.
+
+    Calls tagmanager.accounts.containers.versions.get (or versions.live when
+    version_id is "live"). Returns identity fields, entity counts, and slim
+    tag/trigger/variable listings — never the raw resource, which exceeds 200KB
+    on large containers. fingerprint_datetime (ISO 8601 UTC, derived from the
+    version's fingerprint) is effectively the version's creation time.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        version_id: Container version ID, or "live" for the published version
+    """
+    try:
+        return await _get_version_summary(account_id, container_id, version_id)
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to get container version: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def get_gtm_live_version(account_id: str, container_id: str) -> dict:
+    """Get a summarized snapshot of the currently published (live) container version.
+
+    Calls tagmanager.accounts.containers.versions.live. Same summary shape as
+    get_gtm_container_version: identity fields, entity counts, slim
+    tag/trigger/variable listings, and fingerprint_datetime (publish-time
+    storage timestamp, ISO 8601 UTC).
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+    """
+    try:
+        return await _get_version_summary(account_id, container_id, "live")
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to get live version: {str(e)}"
+        }
+
+
+@mcp.tool()
+async def diff_gtm_container_versions(account_id: str, container_id: str, from_version_id: str, to_version_id: str = "live") -> dict:
+    """Diff two GTM container versions field-by-field, server-side.
+
+    Calls tagmanager.accounts.containers.versions.get for each side (or
+    versions.live for the special value "live"). Answers "what did publishing
+    version X change" — diff X-1 → X, or X → live to see what changed since.
+    Returns added/removed/changed tags, triggers, and variables (changed
+    entries carry per-field change lists with GTM parameter lists matched by
+    key), plus added/removed built-in variables and summary counts. Long
+    string values are truncated at 300 chars; per-entity change lists are
+    capped at 40 entries.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        from_version_id: Baseline version ID, or "live"
+        to_version_id: Target version ID, or "live" (default)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id)
+        if error:
+            return {"status": "error", "message": error}
+        for name, version_id in (("from_version_id", from_version_id), ("to_version_id", to_version_id)):
+            error = _validate_version_id(name, version_id)
+            if error:
+                return {"status": "error", "message": error}
+
+        client = get_gtm_client()
+        # Sequential on purpose: the googleapiclient service shares one
+        # httplib2.Http, which is not thread-safe — concurrent _run calls
+        # (asyncio.to_thread) could interleave on the same socket.
+        from_version = await _fetch_version(client, account_id, container_id, from_version_id)
+        to_version = await _fetch_version(client, account_id, container_id, to_version_id)
+
+        def identity(version):
+            return {
+                "containerVersionId": version.get("containerVersionId"),
+                "name": version.get("name"),
+                "fingerprint_datetime": _fingerprint_to_iso(version.get("fingerprint")),
+            }
+
+        return {
+            "status": "success",
+            "from": identity(from_version),
+            "to": identity(to_version),
+            **_diff_versions(from_version, to_version)
+        }
+    except Exception as e:
+        return {
+            "status": "error",
+            "message": f"Failed to diff container versions: {str(e)}"
+        }
+
+
 @mcp.tool()
 async def delete_gtm_variable(account_id: str, container_id: str, variable_id: str, workspace_id: str = "1") -> dict:
     """Delete a variable from a GTM workspace.
@@ -489,10 +684,84 @@ async def generate_ga4_template(measurement_id: str, config_parameters: dict = N
 # Entry point
 # ---------------------------------------------------------------------------
 
+VALID_TRANSPORTS = ("stdio", "sse", "streamable-http")
+
+
+def _resolve_transport():
+    """Resolve transport, host, port.
+
+    Precedence: CLI flag > env var > default. Default is stdio, matching
+    the behavior expected by Claude Desktop, `mcp-gtm-server`,
+    `uv run python fastmcp_gtm_server.py`, and `./run_server.sh`.
+    """
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--transport", choices=VALID_TRANSPORTS, default=None)
+    parser.add_argument("--host", default=None)
+    parser.add_argument("--port", type=int, default=None)
+    args, _ = parser.parse_known_args()
+
+    transport = args.transport or os.getenv("MCP_TRANSPORT", "stdio")
+    if transport not in VALID_TRANSPORTS:
+        logger.warning(
+            "Invalid MCP_TRANSPORT=%r; falling back to stdio. Valid: %s",
+            transport, VALID_TRANSPORTS,
+        )
+        transport = "stdio"
+
+    host = args.host or os.getenv("HOST", "127.0.0.1")
+    port = args.port or int(os.getenv("PORT", "8000"))
+    return transport, host, port
+
+
 def main():
-    """Entry point for the MCP GTM server."""
-    logger.info("Starting FastMCP GTM Server...")
-    mcp.run()
+    """Entry point for the MCP GTM server.
+
+    Default transport is stdio — no env vars needed. To run over HTTP
+    (e.g. for ContextForge or any hosted gateway), set
+    MCP_TRANSPORT=streamable-http and optionally HOST/PORT.
+    """
+    transport, host, port = _resolve_transport()
+
+    if transport == "stdio":
+        logger.info("Starting FastMCP GTM Server (stdio)...")
+        mcp.run()
+        return
+
+    mcp.settings.host = host
+    mcp.settings.port = port
+
+    # The MCP SDK's DNS-rebinding protection rejects any Host header that
+    # isn't localhost/127.0.0.1 with "Invalid Host header". That breaks
+    # containerized deployments where a gateway reaches us via private DNS
+    # (e.g. gtm-mcp.contextforge.internal). MCP_ALLOWED_HOSTS lets the
+    # operator pin specific hostnames; if unset, we disable rebinding
+    # protection — safe when the listener is only reachable on a private
+    # network (security group, VPC, etc.).
+    from mcp.server.transport_security import TransportSecuritySettings
+    allowed_hosts = [
+        h.strip()
+        for h in os.getenv("MCP_ALLOWED_HOSTS", "").split(",")
+        if h.strip()
+    ]
+    allowed_origins = [
+        o.strip()
+        for o in os.getenv("MCP_ALLOWED_ORIGINS", "").split(",")
+        if o.strip()
+    ]
+    if allowed_hosts:
+        mcp.settings.transport_security = TransportSecuritySettings(
+            allowed_hosts=allowed_hosts,
+            allowed_origins=allowed_origins,
+        )
+    else:
+        mcp.settings.transport_security = TransportSecuritySettings(
+            enable_dns_rebinding_protection=False,
+        )
+
+    logger.info(
+        "Starting FastMCP GTM Server (%s) on %s:%d...", transport, host, port
+    )
+    mcp.run(transport=transport)
 
 
 if __name__ == '__main__':
