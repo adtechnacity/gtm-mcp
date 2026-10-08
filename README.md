@@ -15,11 +15,7 @@ An MCP server that exposes Google Tag Manager API v2 as tools for AI agents like
 ### 1. Install Dependencies
 
 ```bash
-# Using uv (recommended)
 uv sync
-
-# Or using pip
-pip install -r requirements.txt
 ```
 
 ### 2. Create a Service Account
@@ -296,8 +292,7 @@ gtm-mcp/
 ├── gtm_client_fixed.py        # GTM API client with service account auth
 ├── gtm_components.py          # Template builder (no API calls)
 ├── cli.py                     # CLI tool (7 read-only subcommands)
-├── pyproject.toml             # Project config & dependencies
-├── requirements.txt           # pip dependencies
+├── pyproject.toml             # Project config & dependencies (locked in uv.lock)
 ├── run_server.sh              # Launch script
 ├── AGENTS.md                  # AI agent reference & full API coverage
 ├── LICENSE                    # MIT

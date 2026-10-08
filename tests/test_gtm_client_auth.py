@@ -2,7 +2,6 @@
 import os
 import json
 import tempfile
-from pathlib import Path
 from unittest.mock import patch, MagicMock
 
 import pytest
@@ -123,7 +122,7 @@ class TestOAuthTokenCache:
 
     def test_token_saved_to_disk(self, tmp_path):
         """After OAuth flow, token.json is written to token_dir."""
-        from gtm_client_fixed import _save_oauth_token, _load_oauth_token
+        from gtm_client_fixed import _save_oauth_token
 
         mock_creds = MagicMock()
         mock_creds.token = "access-token-123"
