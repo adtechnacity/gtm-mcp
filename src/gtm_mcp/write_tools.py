@@ -1,20 +1,10 @@
-"""
-Write MCP tools for Google Tag Manager.
+"""Write MCP tools: create/update/delete tags, triggers, variables; publish.
 
-Registers 25 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
-create_tag, create_trigger, create_datalayer_variable, create_datalayer_variables_batch,
-create_js_variable, publish_gtm_container, update_tag_consent_settings,
-update_tags_consent_settings_batch, update_tag_html, update_tag_parameters,
-update_trigger_parameters, update_trigger_filter,
-delete_tag, delete_trigger, add_firing_trigger_to_tags_batch,
-add_blocking_trigger_to_tags_batch, set_firing_triggers_on_tags_batch,
-remove_firing_trigger_from_tags_batch, remove_blocking_trigger_from_tags_batch,
-set_tags_firing_option_batch, pause_tag, unpause_tag, create_gtm_variable,
-update_gtm_variable, update_tag.
+Tools register on the shared ``mcp`` instance from ``gtm_mcp.helpers``.
 """
 import asyncio
 
-from fastmcp_gtm_helpers import (
+from gtm_mcp.helpers import (
     mcp, get_gtm_client, _run,
     MAX_BATCH_SIZE,
     _create_datalayer_var,

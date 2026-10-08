@@ -23,11 +23,11 @@ def _make_mock_client():
 
 
 async def _call(**kwargs):
-    from fastmcp_gtm_write_tools import create_gtm_variable
+    from gtm_mcp.write_tools import create_gtm_variable
 
     client, variables = _make_mock_client()
-    with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
-         patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+    with patch("gtm_mcp.write_tools.get_gtm_client", return_value=client), \
+         patch("gtm_mcp.write_tools._resolve_workspace_parent",
                new=AsyncMock(return_value=("54", WS_PARENT))):
         result = await create_gtm_variable(account_id="1", container_id="2",
                                            workspace_id="54", **kwargs)

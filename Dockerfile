@@ -6,7 +6,7 @@ FROM public.ecr.aws/docker/library/python:3.12-slim
 WORKDIR /app
 
 # Install exactly what uv.lock pins, so the image matches local/CI.
-# --no-install-project: we run fastmcp_gtm_server.py directly (entrypoint.sh).
+# Deps first (cached layer), then the gtm_mcp package itself.
 RUN pip install --no-cache-dir uv==0.11.7
 ENV UV_PROJECT_ENVIRONMENT=/app/.venv \
     UV_COMPILE_BYTECODE=1 \
@@ -15,7 +15,7 @@ COPY pyproject.toml uv.lock ./
 RUN uv sync --frozen --no-dev --no-install-project --no-cache
 
 COPY . .
-RUN chmod +x /app/entrypoint.sh
+RUN uv sync --frozen --no-dev --no-editable --no-cache && chmod +x /app/entrypoint.sh
 
 EXPOSE 8000
 

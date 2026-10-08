@@ -56,8 +56,8 @@ def _maven_tag():
 
 def _patched(client):
     return (
-        patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client),
-        patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+        patch("gtm_mcp.write_tools.get_gtm_client", return_value=client),
+        patch("gtm_mcp.write_tools._resolve_workspace_parent",
               new=AsyncMock(return_value=_WS_PARENT)),
     )
 
@@ -70,7 +70,7 @@ def _patched(client):
 class TestValidation:
     @pytest.mark.asyncio
     async def test_invalid_tag_id_returns_error(self):
-        from fastmcp_gtm_write_tools import update_tag
+        from gtm_mcp.write_tools import update_tag
 
         result = await update_tag(account_id="1", container_id="2", tag_id="bad",
                                   name="x")
@@ -79,7 +79,7 @@ class TestValidation:
 
     @pytest.mark.asyncio
     async def test_nothing_to_update_returns_error(self):
-        from fastmcp_gtm_write_tools import update_tag
+        from gtm_mcp.write_tools import update_tag
 
         result = await update_tag(account_id="1", container_id="2", tag_id="504")
         assert result["status"] == "error"
@@ -87,7 +87,7 @@ class TestValidation:
 
     @pytest.mark.asyncio
     async def test_invalid_firing_option_returns_error(self):
-        from fastmcp_gtm_write_tools import update_tag
+        from gtm_mcp.write_tools import update_tag
 
         result = await update_tag(account_id="1", container_id="2", tag_id="504",
                                   tag_firing_option="oncePerWeek")
@@ -103,7 +103,7 @@ class TestValidation:
 class TestSequencing:
     @pytest.mark.asyncio
     async def test_teardown_tag_name_writes_correct_shape(self):
-        from fastmcp_gtm_write_tools import update_tag
+        from gtm_mcp.write_tools import update_tag
 
         client, tags = _make_single_tag_client(_maven_tag())
         p1, p2 = _patched(client)
@@ -125,7 +125,7 @@ class TestSequencing:
 
     @pytest.mark.asyncio
     async def test_setup_tag_name_and_stop_on_failure(self):
-        from fastmcp_gtm_write_tools import update_tag
+        from gtm_mcp.write_tools import update_tag
 
         client, tags = _make_single_tag_client(_maven_tag())
         p1, p2 = _patched(client)
@@ -150,7 +150,7 @@ class TestSequencing:
 class TestPartialUpdate:
     @pytest.mark.asyncio
     async def test_name_only_preserves_triggers_and_params(self):
-        from fastmcp_gtm_write_tools import update_tag
+        from gtm_mcp.write_tools import update_tag
 
         client, tags = _make_single_tag_client(_maven_tag())
         p1, p2 = _patched(client)
@@ -166,7 +166,7 @@ class TestPartialUpdate:
 
     @pytest.mark.asyncio
     async def test_empty_firing_trigger_ids_clears_them(self):
-        from fastmcp_gtm_write_tools import update_tag
+        from gtm_mcp.write_tools import update_tag
 
         client, tags = _make_single_tag_client(_yahoo_tag())
         p1, p2 = _patched(client)
@@ -179,7 +179,7 @@ class TestPartialUpdate:
 
     @pytest.mark.asyncio
     async def test_html_param_and_firing_option_and_fingerprint(self):
-        from fastmcp_gtm_write_tools import update_tag
+        from gtm_mcp.write_tools import update_tag
 
         client, tags = _make_single_tag_client(_yahoo_tag())
         new_param = [{"type": "template", "key": "html", "value": "<script>gated</script>"}]

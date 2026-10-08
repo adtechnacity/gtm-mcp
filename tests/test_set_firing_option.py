@@ -45,7 +45,7 @@ _WS_PARENT = ("101", "accounts/1/containers/2/workspaces/101")
 class TestValidation:
     @pytest.mark.asyncio
     async def test_invalid_firing_option_returns_error(self):
-        from fastmcp_gtm_write_tools import set_tags_firing_option_batch
+        from gtm_mcp.write_tools import set_tags_firing_option_batch
 
         result = await set_tags_firing_option_batch(
             account_id="1", container_id="2", tag_ids=["100"],
@@ -56,7 +56,7 @@ class TestValidation:
 
     @pytest.mark.asyncio
     async def test_invalid_account_id_returns_error(self):
-        from fastmcp_gtm_write_tools import set_tags_firing_option_batch
+        from gtm_mcp.write_tools import set_tags_firing_option_batch
 
         result = await set_tags_firing_option_batch(
             account_id="bad", container_id="2", tag_ids=["100"],
@@ -74,7 +74,7 @@ class TestValidation:
 class TestBatch:
     @pytest.mark.asyncio
     async def test_sets_firing_option_on_mismatched_tags(self):
-        from fastmcp_gtm_write_tools import set_tags_firing_option_batch
+        from gtm_mcp.write_tools import set_tags_firing_option_batch
 
         tags = {
             "298": {"name": "MT Action 1 CTA Click", "tagId": "298", "type": "img",
@@ -86,8 +86,8 @@ class TestBatch:
         }
         client, tags_mock = _make_multi_tag_client(tags)
 
-        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
-             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+        with patch("gtm_mcp.write_tools.get_gtm_client", return_value=client), \
+             patch("gtm_mcp.write_tools._resolve_workspace_parent",
                    new=AsyncMock(return_value=_WS_PARENT)):
             result = await set_tags_firing_option_batch(
                 account_id="1", container_id="2", tag_ids=["298", "300"],
@@ -104,7 +104,7 @@ class TestBatch:
 
     @pytest.mark.asyncio
     async def test_skips_tag_already_at_target(self):
-        from fastmcp_gtm_write_tools import set_tags_firing_option_batch
+        from gtm_mcp.write_tools import set_tags_firing_option_batch
 
         tags = {
             "100": {"name": "MT Action 1", "tagId": "100", "type": "img",
@@ -112,8 +112,8 @@ class TestBatch:
         }
         client, tags_mock = _make_multi_tag_client(tags)
 
-        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
-             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+        with patch("gtm_mcp.write_tools.get_gtm_client", return_value=client), \
+             patch("gtm_mcp.write_tools._resolve_workspace_parent",
                    new=AsyncMock(return_value=_WS_PARENT)):
             result = await set_tags_firing_option_batch(
                 account_id="1", container_id="2", tag_ids=["100"],
@@ -126,7 +126,7 @@ class TestBatch:
 
     @pytest.mark.asyncio
     async def test_preserves_other_tag_fields(self):
-        from fastmcp_gtm_write_tools import set_tags_firing_option_batch
+        from gtm_mcp.write_tools import set_tags_firing_option_batch
 
         tags = {
             "239": {"name": "Exit Capture CTA Click", "tagId": "239", "type": "img",
@@ -136,8 +136,8 @@ class TestBatch:
         }
         client, tags_mock = _make_multi_tag_client(tags)
 
-        with patch("fastmcp_gtm_write_tools.get_gtm_client", return_value=client), \
-             patch("fastmcp_gtm_write_tools._resolve_workspace_parent",
+        with patch("gtm_mcp.write_tools.get_gtm_client", return_value=client), \
+             patch("gtm_mcp.write_tools._resolve_workspace_parent",
                    new=AsyncMock(return_value=_WS_PARENT)):
             await set_tags_firing_option_batch(
                 account_id="1", container_id="2", tag_ids=["239"],

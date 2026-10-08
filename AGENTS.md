@@ -2,16 +2,20 @@
 
 ## Architecture
 
-Five Python files:
+Package `src/gtm_mcp/`:
 
-| File                         | Role                                                                                   |
-| ---------------------------- | -------------------------------------------------------------------------------------- |
-| `fastmcp_gtm_server.py`      | MCP server entry point — 14 read/query tools + `main()`                                |
-| `fastmcp_gtm_write_tools.py` | 19 write tools (imported by server on startup)                                         |
-| `fastmcp_gtm_helpers.py`     | Shared `mcp` instance, GTM client, validation, pagination, batch helpers               |
-| `gtm_client_fixed.py`        | GTM API client — service account auth, wraps `google-api-python-client`                |
-| `gtm_components.py`          | Local template builders — no API calls, produce JSON dicts for tags/triggers/variables |
-| `cli.py`                     | CLI entry point — 7 read-only subcommands, prints JSON to stdout                       |
+| Module           | Role                                                                                     |
+| ---------------- | ---------------------------------------------------------------------------------------- |
+| `server.py`      | Entry point (`mcp-gtm-server`) — imports the tool modules, picks stdio/HTTP transport    |
+| `read_tools.py`  | Discovery, read, and version-history tools (+ `delete_gtm_variable`, historical)         |
+| `write_tools.py` | Create / update / delete / publish tools                                                 |
+| `helpers.py`     | Shared `mcp` instance, lazy GTM client, workspace resolution, validation, batch + diff helpers |
+| `client.py`      | `GTMClient` — service account or OAuth auth, builds the `tagmanager` v2 service          |
+| `cli.py`         | `gtm-cli` — read-only subcommands, prints JSON to stdout                                 |
+
+Tools call `client.service` (googleapiclient) directly through `helpers._run`,
+which runs the blocking request in a thread. Root `fastmcp_gtm_server.py` is
+only a back-compat launcher for existing MCP configs.
 
 ## ID Hierarchy
 
@@ -30,18 +34,19 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 
 ## Environment Variables
 
-| Variable                         | Default      | Description                                  |
-| -------------------------------- | ------------ | -------------------------------------------- |
-| `GOOGLE_APPLICATION_CREDENTIALS` | _(required)_ | Path to Google service account JSON key file |
+| Variable                         | Default  | Description                                                        |
+| -------------------------------- | -------- | ------------------------------------------------------------------ |
+| `GOOGLE_APPLICATION_CREDENTIALS` | —        | Service account JSON key path (takes precedence)                   |
+| `GOOGLE_OAUTH_CLIENT_SECRET`     | —        | OAuth Desktop App client secret path; token cached in `~/.gtm-mcp/token.json` |
+| `GCP_SA_JSON`                    | —        | Container only: SA JSON content, written to disk by `entrypoint.sh` |
+| `MCP_TRANSPORT`                  | `stdio`  | `stdio`, `sse`, or `streamable-http`                               |
+| `HOST` / `PORT`                  | `127.0.0.1` / `8000` | HTTP bind address                                       |
+| `MCP_ALLOWED_HOSTS` / `MCP_ALLOWED_ORIGINS` | — | Comma-separated; unset disables DNS-rebinding protection (HTTP only) |
 
-## Auth Flow
+One of the two credential variables is required. Scopes requested:
+`tagmanager.readonly`, `tagmanager.edit.containers`, `tagmanager.publish`.
 
-1. `GTMClient` reads the `GOOGLE_APPLICATION_CREDENTIALS` env var (or accepts `credentials_file` parameter)
-2. Loads service account credentials via `google.oauth2.service_account.Credentials.from_service_account_file()`
-3. Requests scopes: `tagmanager.readonly`, `tagmanager.edit.containers`, `tagmanager.publish`
-4. Builds the `tagmanager` v2 service — no browser, no token file, fully headless
-
-## Implemented Tools (40)
+## Implemented Tools
 
 ### Discovery
 
@@ -116,12 +121,6 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 | ----------------------- | -------------------------------------------- |
 | `publish_gtm_container` | Create version from workspace and publish it |
 
-### Templates (Local Only)
-
-| Tool                    | Description                             |
-| ----------------------- | --------------------------------------- |
-| `generate_ga4_template` | Generate GA4 tag JSON without API calls |
-
 ## Common Workflow Patterns
 
 ### 1. Discovery
@@ -178,7 +177,7 @@ list_gtm_container_versions(account_id, container_id)
 
 ## GTM API v2 — Full Endpoint Reference
 
-The GTM API v2 has 18 resource families with ~105 methods total. This server currently implements 20 unique API methods. The table below shows implementation status.
+The GTM API v2 has 18 resource families with ~105 methods total. The table below shows implementation status.
 
 ### accounts
 
@@ -193,7 +192,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 | Method                   | Implemented | Tool                                         |
 | ------------------------ | ----------- | -------------------------------------------- |
 | `containers.list`        | Yes         | `list_gtm_containers`, `test_gtm_connection` |
-| `containers.get`         | Yes         | (in `gtm_client_fixed.py` only)              |
+| `containers.get`         | No          | —                                            |
 | `containers.create`      | No          | —                                            |
 | `containers.update`      | No          | —                                            |
 | `containers.delete`      | No          | —                                            |
@@ -224,7 +223,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 | `tags.list`   | Yes         | `list_gtm_tags`                                                                                                                                                                                                                                                                           |
 | `tags.get`    | Yes         | `get_gtm_tag`                                                                                                                                                                                                                                                                             |
 | `tags.create` | Yes         | `create_tag`                                                                                                                                                                                                                                                                              |
-| `tags.update` | Yes         | `update_tag_consent_settings`, `update_tags_consent_settings_batch`, `update_tag_html`, `add_firing_trigger_to_tags_batch`, `add_blocking_trigger_to_tags_batch`, `set_firing_triggers_on_tags_batch`, `remove_firing_trigger_from_tags_batch`, `remove_blocking_trigger_from_tags_batch` |
+| `tags.update` | Yes         | Every tool under "Modifying" that touches tags |
 | `tags.delete` | Yes         | `delete_tag`                                                                                                                                                                                                                                                                              |
 | `tags.revert` | No          | —                                                                                                                                                                                                                                                                                         |
 
@@ -244,9 +243,9 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 | Method             | Implemented | Tool                                                                                  |
 | ------------------ | ----------- | ------------------------------------------------------------------------------------- |
 | `variables.list`   | Yes         | `list_gtm_variables`                                                                  |
-| `variables.get`    | No          | —                                                                                     |
-| `variables.create` | Yes         | `create_datalayer_variable`, `create_datalayer_variables_batch`, `create_js_variable` |
-| `variables.update` | No          | —                                                                                     |
+| `variables.get`    | Yes         | `get_gtm_variable` |
+| `variables.create` | Yes         | `create_gtm_variable`, `create_js_variable`, `create_datalayer_variable(s_batch)` |
+| `variables.update` | Yes         | `update_gtm_variable` |
 | `variables.delete` | Yes         | `delete_gtm_variable`                                                                 |
 | `variables.revert` | No          | —                                                                                     |
 
@@ -373,7 +372,6 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 
 - `tags.revert`
 - `triggers.revert`
-- `variables.get`, `variables.update`
 - `workspaces.create`, `workspaces.get`
 
 ### Medium — Environments, versions, folders
@@ -397,6 +395,8 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 
 ## Testing
 
-pytest + pytest-asyncio: `uv run pytest tests/ test_helpers.py test_components.py -q`. Tests
-mock the GTM client with `MagicMock` and patch `get_gtm_client` /
-`_resolve_workspace_parent`, so no credentials or network access are needed.
+`uv run pytest` (tests live in `tests/`) and `uv run ruff check .`. Tests mock
+the GTM client with `MagicMock` and patch `gtm_mcp.<module>.get_gtm_client` /
+`_resolve_workspace_parent`, so no credentials or network are needed.
+`tests/test_docs_tool_list.py` fails when the "Implemented Tools" section above
+doesn't match the registered tools — update this file when adding/removing one.

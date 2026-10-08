@@ -152,63 +152,6 @@ class GTMClient:
     def _workspace_parent(account_id: str, container_id: str, workspace_id: str = "1") -> str:
         return f"accounts/{account_id}/containers/{container_id}/workspaces/{workspace_id}"
 
-    @staticmethod
-    def _params_to_list(parameters: Dict[str, Any]) -> List[Dict[str, str]]:
-        """Convert a flat {key: value} dict to GTM's parameter list format."""
-        return [
-            {'key': key, 'value': value, 'type': 'template'}
-            for key, value in parameters.items()
-        ]
-
-    # ------------------------------------------------------------------
-    # Write operations
-    # ------------------------------------------------------------------
-
-    def create_tag(self, account_id: str, container_id: str, name: str, tag_type: str, parameters: Dict[str, Any], workspace_id: str = "1") -> Dict[str, Any]:
-        parent = self._workspace_parent(account_id, container_id, workspace_id)
-        tag_body = {
-            'name': name,
-            'type': tag_type,
-            'parameter': self._params_to_list(parameters),
-        }
-
-        logger.info("Creating tag: %s", name)
-        result = self.service.accounts().containers().workspaces().tags().create(
-            parent=parent, body=tag_body
-        ).execute()
-        logger.info("Tag created successfully: %s", result.get('name', 'Unknown'))
-        return result
-
-    def create_trigger(self, account_id: str, container_id: str, name: str, trigger_type: str, filters: List[Dict[str, Any]], workspace_id: str = "1") -> Dict[str, Any]:
-        parent = self._workspace_parent(account_id, container_id, workspace_id)
-        trigger_body = {
-            'name': name,
-            'type': trigger_type,
-            'customEventFilter': filters,
-        }
-
-        logger.info("Creating trigger: %s", name)
-        result = self.service.accounts().containers().workspaces().triggers().create(
-            parent=parent, body=trigger_body
-        ).execute()
-        logger.info("Trigger created successfully: %s", result.get('name', 'Unknown'))
-        return result
-
-    def create_variable(self, account_id: str, container_id: str, name: str, variable_type: str, parameters: Dict[str, Any], workspace_id: str = "1") -> Dict[str, Any]:
-        parent = self._workspace_parent(account_id, container_id, workspace_id)
-        variable_body = {
-            'name': name,
-            'type': variable_type,
-            'parameter': self._params_to_list(parameters),
-        }
-
-        logger.info("Creating variable: %s", name)
-        result = self.service.accounts().containers().workspaces().variables().create(
-            parent=parent, body=variable_body
-        ).execute()
-        logger.info("Variable created successfully: %s", result.get('name', 'Unknown'))
-        return result
-
     # ------------------------------------------------------------------
     # Read operations
     # ------------------------------------------------------------------
@@ -220,13 +163,6 @@ class GTMClient:
         containers = result.get('container', [])
         logger.info("Found %d containers", len(containers))
         return containers
-
-    def get_container(self, account_id: str, container_id: str) -> Dict[str, Any]:
-        path = f"accounts/{account_id}/containers/{container_id}"
-        logger.info("Getting container %s", container_id)
-        result = self.service.accounts().containers().get(path=path).execute()
-        logger.info("Retrieved container: %s", result.get('name', 'Unknown'))
-        return result
 
     # ------------------------------------------------------------------
     # Publish
