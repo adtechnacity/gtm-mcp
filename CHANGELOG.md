@@ -5,6 +5,7 @@
 ### Added
 - `pause_tag` and `unpause_tag` tools — toggle a tag's `paused` flag via `tags.update`, preserving every other field (uses fingerprint for optimistic concurrency). Returns `status="noop"` if the tag is already in the requested state.
 - `get_gtm_variable` tool — full variable resource via `variables.get`, including the JS source for JS Macro (`jsm`) variables.
+- `create_gtm_variable` tool — create a variable of any type via `variables.create`; `javascript=` shortcut builds a Custom JavaScript (`jsm`) variable.
 - `update_tag` tool — partial in-place tag update via `tags.update` (name, parameters, firing/blocking triggers, setup/teardown tag sequencing, firing option, consent, notes, paused, folder). Preserves the tag ID so sequencing references keep working; `firing_trigger_ids=[]` clears a tag's own triggers.
 - `set_tags_firing_option_batch` tool — bulk set `tagFiringOption` (`unlimited` / `oncePerEvent` / `oncePerLoad`) across many tags, skipping tags already on the target option.
 - `delete_gtm_trigger` tool — delete a trigger via `triggers.delete`, refusing when any tag still references it as a firing or blocking trigger (returns `code="referenced"` with the referencing tags) unless `force=True`.

@@ -4,7 +4,7 @@ An MCP server that exposes Google Tag Manager API v2 as tools for AI agents like
 
 ## Features
 
-- **26 MCP tools** covering discovery, CRUD, consent management, pause/unpause, batch operations, and publishing
+- **27 MCP tools** covering discovery, CRUD, consent management, pause/unpause, batch operations, and publishing
 - **Service account authentication** — headless, no browser flow, works in containers
 - **Template builder** for generating GTM component JSON locally
 - **Batch operations** for bulk consent updates and variable creation
@@ -100,7 +100,7 @@ Or using the installed entry point:
 }
 ```
 
-## Available Tools (26)
+## Available Tools (27)
 
 ### Discovery
 - `test_gtm_connection` — Verify service account credentials
@@ -118,6 +118,7 @@ Or using the installed entry point:
 ### Creating
 - `create_tag` — Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.)
 - `create_trigger` — Create a GTM trigger of any supported type (customEvent, linkClick, click, pageview, domReady, windowLoaded, formSubmission, historyChange, jsError) with a friendly filter DSL
+- `create_gtm_variable` — Create a variable of any type (`javascript=` shortcut for Custom JavaScript)
 - `create_datalayer_variable` — Create a single Data Layer Variable
 - `create_datalayer_variables_batch` — Create multiple Data Layer Variables
 

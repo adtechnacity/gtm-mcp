@@ -7,7 +7,7 @@ Five Python files:
 | File | Role |
 |------|------|
 | `fastmcp_gtm_server.py` | MCP server entry point — 11 read/query tools + `main()` |
-| `fastmcp_gtm_write_tools.py` | 15 write tools (imported by server on startup) |
+| `fastmcp_gtm_write_tools.py` | 16 write tools (imported by server on startup) |
 | `fastmcp_gtm_helpers.py` | Shared `mcp` instance, GTM client, validation, pagination, batch helpers |
 | `gtm_client_fixed.py` | GTM API client — service account auth, wraps `google-api-python-client` |
 | `gtm_components.py` | Local template builders — no API calls, produce JSON dicts for tags/triggers/variables |
@@ -41,7 +41,7 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 3. Requests scopes: `tagmanager.readonly`, `tagmanager.edit.containers`, `tagmanager.publish`
 4. Builds the `tagmanager` v2 service — no browser, no token file, fully headless
 
-## Implemented Tools (26)
+## Implemented Tools (27)
 
 ### Discovery
 
@@ -68,6 +68,7 @@ Most tools require `account_id` + `container_id`. Some also need `workspace_id` 
 |------|-------------|
 | `create_tag` | Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.) |
 | `create_trigger` | Create a GTM trigger of any supported type (customEvent, linkClick, click, pageview, domReady, windowLoaded, formSubmission, historyChange, jsError) with a friendly filter DSL |
+| `create_gtm_variable` | Any variable type; `javascript=` shortcut for Custom JavaScript (jsm) |
 | `create_datalayer_variable` | Single Data Layer Variable |
 | `create_datalayer_variables_batch` | Multiple Data Layer Variables |
 
@@ -195,7 +196,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. This server cur
 |--------|-------------|------|
 | `variables.list` | Yes | `list_gtm_variables` |
 | `variables.get` | Yes | `get_gtm_variable` |
-| `variables.create` | Yes | `create_datalayer_variable`, `create_datalayer_variables_batch` |
+| `variables.create` | Yes | `create_gtm_variable`, `create_datalayer_variable`, `create_datalayer_variables_batch` |
 | `variables.update` | Yes | `update_gtm_variable` |
 | `variables.delete` | Yes | `delete_gtm_variable` |
 | `variables.revert` | No | — |

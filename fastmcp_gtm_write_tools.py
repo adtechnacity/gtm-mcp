@@ -1,11 +1,11 @@
 """
 Write MCP tools for Google Tag Manager.
 
-Registers 16 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
+Registers 17 tools on the shared ``mcp`` instance from fastmcp_gtm_helpers:
 create_tag, create_trigger, create_datalayer_variable, create_datalayer_variables_batch,
 publish_gtm_container, update_tag_consent_settings, update_tags_consent_settings_batch,
 add_firing_trigger_to_tags_batch, set_tags_firing_option_batch, pause_tag, unpause_tag,
-delete_tag, delete_gtm_trigger, update_gtm_variable, update_tag, update_gtm_trigger.
+delete_tag, delete_gtm_trigger, create_gtm_variable, update_gtm_variable, update_tag, update_gtm_trigger.
 """
 import asyncio
 
@@ -1038,6 +1038,85 @@ async def update_gtm_trigger(
 # ---------------------------------------------------------------------------
 # Update variable
 # ---------------------------------------------------------------------------
+
+
+@mcp.tool()
+async def create_gtm_variable(
+    account_id: str,
+    container_id: str,
+    name: str,
+    *,
+    variable_type: str | None = None,
+    parameters: list | None = None,
+    javascript: str | None = None,
+    notes: str | None = None,
+    parent_folder_id: str | None = None,
+    workspace_id: str = "1",
+) -> dict:
+    """Create a GTM variable of any type.
+
+    Pass ``javascript=<source>`` to create a Custom JavaScript (jsm) variable;
+    the tool builds the parameter list. For any other type pass
+    ``variable_type`` (e.g. "c" constant, "u" URL, "v" data layer) plus a raw
+    GTM ``parameters`` list. ``parameters`` and ``javascript`` are mutually
+    exclusive.
+
+    Args:
+        account_id: GTM Account ID
+        container_id: GTM Container ID
+        name: Display name; tags reference it as ``{{name}}``
+        variable_type: GTM variable type; defaults to "jsm" with javascript
+        parameters: Raw GTM parameter list (optional)
+        javascript: Custom JS source; implies type "jsm" (optional)
+        notes: Notes (optional)
+        parent_folder_id: Folder ID (optional)
+        workspace_id: GTM Workspace ID (auto-detected if omitted)
+    """
+    try:
+        error = _validate_ids(account_id=account_id, container_id=container_id)
+        if error:
+            return {"status": "error", "message": error}
+        if not name:
+            return {"status": "error", "message": "name must be a non-empty string"}
+        if parameters is not None and javascript is not None:
+            return {"status": "error",
+                    "message": "parameters and javascript are mutually exclusive"}
+        if javascript is not None:
+            if variable_type not in (None, "jsm"):
+                return {"status": "error",
+                        "message": f"javascript requires type 'jsm', got '{variable_type}'"}
+            variable_type = "jsm"
+            parameters = [{"type": "template", "key": "javascript", "value": javascript}]
+        elif not variable_type:
+            return {"status": "error",
+                    "message": "variable_type is required unless javascript is given"}
+
+        body = {"name": name, "type": variable_type, "parameter": parameters or []}
+        if notes is not None:
+            body["notes"] = notes
+        if parent_folder_id is not None:
+            body["parentFolderId"] = parent_folder_id
+
+        client = get_gtm_client()
+        _, parent = await _resolve_workspace_parent(
+            client, account_id, container_id, workspace_id
+        )
+        created = await _run(
+            client.service.accounts().containers().workspaces().variables().create(
+                parent=parent, body=body,
+            )
+        )
+
+        return {
+            "status": "success",
+            "message": f"Variable '{created.get('name')}' created",
+            "variable_id": created.get("variableId"),
+            "variable_name": created.get("name"),
+            "variable_type": created.get("type"),
+            "path": created.get("path"),
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to create variable: {str(e)}"}
 
 
 @mcp.tool()
