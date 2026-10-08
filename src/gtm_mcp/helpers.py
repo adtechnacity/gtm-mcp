@@ -347,16 +347,18 @@ def _upsert_parameters(existing, updates):
     return result
 
 
+def _datalayer_parameters(key):
+    """GTM parameters for a Data Layer Variable (type ``v``, dataLayer v2) reading ``key``."""
+    return [
+        {'key': 'dataLayerVersion', 'value': '2', 'type': 'integer'},
+        {'key': 'setDefaultValue', 'value': 'false', 'type': 'boolean'},
+        {'key': 'name', 'value': key, 'type': 'template'},
+    ]
+
+
 async def _create_datalayer_var(client, parent, name, key):
     """Create a single Data Layer Variable and return its result dict."""
-    variable_body = {
-        'name': name, 'type': 'v',
-        'parameter': [
-            {'key': 'dataLayerVersion', 'value': '2', 'type': 'integer'},
-            {'key': 'setDefaultValue', 'value': 'false', 'type': 'boolean'},
-            {'key': 'name', 'value': key, 'type': 'template'},
-        ],
-    }
+    variable_body = {'name': name, 'type': 'v', 'parameter': _datalayer_parameters(key)}
     result = await _run(client.service.accounts().containers().workspaces().variables().create(
         parent=parent, body=variable_body))
     return {"name": name, "key": key, "variable_id": result.get('variableId')}
@@ -413,56 +415,33 @@ async def _batch_update_tags(client, path_prefix, tag_ids, mutate_fn,
     return results
 
 
-async def _append_trigger_to_tags_batch(
-    client, path_prefix, tag_ids, trigger_id, *, field, label, skip_reason
-):
-    """Append a trigger ID to either ``firingTriggerId`` or ``blockingTriggerId`` across tags."""
-    def append(tag):
+
+async def _modify_tag_triggers_batch(client, path_prefix, tag_ids, trigger_ids, *, action, field):
+    """Add / remove / set trigger IDs in ``field`` (firing or blocking) across tags.
+
+    ``add`` appends IDs not already attached, ``remove`` detaches them, ``set``
+    replaces the list. Tags that wouldn't change are skipped.
+    """
+    ids = list(dict.fromkeys(trigger_ids))
+
+    def mutate(tag):
         existing = tag.get(field, [])
-        if trigger_id in existing:
+        if action == "add":
+            new = existing + [t for t in ids if t not in existing]
+        elif action == "remove":
+            new = [t for t in existing if t not in ids]
+        else:
+            new = ids
+        if new == existing:
             return None
-        tag[field] = existing + [trigger_id]
+        tag[field] = new
         return tag
+
     return await _batch_update_tags(
-        client, path_prefix, tag_ids, append,
-        extra_fields_fn=lambda t: {label: t.get(field, [])},
-        skip_reason=skip_reason,
+        client, path_prefix, tag_ids, mutate,
+        extra_fields_fn=lambda t: {field: t.get(field, [])},
+        skip_reason="No change",
     )
-
-
-async def _remove_trigger_from_tags_batch(
-    client, path_prefix, tag_ids, trigger_id, *, field, label, skip_reason
-):
-    """Remove a trigger ID from ``firingTriggerId`` or ``blockingTriggerId`` across tags."""
-    def remove(tag):
-        existing = tag.get(field, [])
-        if trigger_id not in existing:
-            return None
-        tag[field] = [t for t in existing if t != trigger_id]
-        return tag
-    return await _batch_update_tags(
-        client, path_prefix, tag_ids, remove,
-        extra_fields_fn=lambda t: {label: t.get(field, [])},
-        skip_reason=skip_reason,
-    )
-
-
-async def _set_triggers_on_tags_batch(
-    client, path_prefix, tag_ids, trigger_ids, *, field, label, skip_reason
-):
-    """Replace the ``firingTriggerId`` or ``blockingTriggerId`` list with ``trigger_ids``."""
-    new_list = list(trigger_ids)
-    def set_list(tag):
-        if tag.get(field, []) == new_list:
-            return None
-        tag[field] = new_list
-        return tag
-    return await _batch_update_tags(
-        client, path_prefix, tag_ids, set_list,
-        extra_fields_fn=lambda t: {label: t.get(field, [])},
-        skip_reason=skip_reason,
-    )
-
 
 # ---------------------------------------------------------------------------
 # Version history helpers — pure functions over ContainerVersion resources

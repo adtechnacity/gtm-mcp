@@ -66,12 +66,11 @@ One of the two credential variables is required. Scopes requested:
 
 ### Discovery
 
-| Tool                  | Description                                                   |
-| --------------------- | ------------------------------------------------------------- |
-| `test_gtm_connection` | Verify service account credentials work by listing containers |
-| `list_gtm_accounts`   | List all accessible GTM accounts                              |
-| `list_gtm_containers` | List containers in an account                                 |
-| `list_gtm_workspaces` | List workspaces in a container                                |
+| Tool                  | Description                    |
+| --------------------- | ------------------------------ |
+| `list_gtm_accounts`   | List all accessible GTM accounts |
+| `list_gtm_containers` | List containers in an account (also the cheapest credentials check) |
+| `list_gtm_workspaces` | List workspaces in a container |
 
 ### Reading
 
@@ -85,43 +84,33 @@ One of the two credential variables is required. Scopes requested:
 
 ### Version History
 
-| Tool                          | Description                                                                                                                                       |
-| ----------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `list_gtm_container_versions` | List a container's version headers (IDs are monotonic; no timestamps — date a version via `get_gtm_container_version`)                            |
-| `get_gtm_container_version`   | Summarized snapshot of one version (counts + slim entity listings + `fingerprint_datetime`); accepts `version_id="live"`                          |
-| `get_gtm_live_version`        | Summarized snapshot of the currently published version                                                                                            |
+| Tool                          | Description |
+| ----------------------------- | ----------- |
+| `list_gtm_container_versions` | List a container's version headers (IDs are monotonic; no timestamps — date a version via `get_gtm_container_version`) |
+| `get_gtm_container_version`   | Summarized snapshot of one version (counts + slim entity listings + `fingerprint_datetime`); `version_id` defaults to `"live"` |
 | `diff_gtm_container_versions` | Server-side field-level diff between two versions (numeric IDs or `"live"`) — added/removed/changed tags, triggers, variables, built-in variables |
 
 ### Creating
 
-| Tool                               | Description                                                                                                       |
-| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `create_tag`                       | Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.)                                          |
+| Tool                               | Description |
+| ---------------------------------- | ----------- |
+| `create_tag`                       | Create any tag type (GA4, Custom HTML, Facebook Pixel, Google Ads, etc.) |
 | `create_trigger`                   | Create any GTM trigger type (customEvent, pageview, init, domReady, etc.); optional `filters` adds AND conditions |
-| `create_datalayer_variable`        | Single Data Layer Variable                                                                                        |
-| `create_datalayer_variables_batch` | Multiple Data Layer Variables                                                                                     |
-| `create_js_variable`               | Custom JavaScript variable (type `jsm`)                                                                           |
-| `create_gtm_variable`              | Any variable type; `javascript=` shortcut for `jsm`                                                               |
+| `create_gtm_variable`              | Any variable type; shortcuts `javascript=` (`jsm`) and `datalayer_key=` (`v`) |
+| `create_datalayer_variables_batch` | Multiple Data Layer Variables at once |
 
 ### Modifying
 
-| Tool                                      | Description                                                                                                                                                                                  |
-| ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `update_tag`                              | Partial in-place tag update (triggers, sequencing, firing option, consent, notes, paused, folder) — keeps tag ID |
-| `update_gtm_variable`                     | Update a variable in place; `javascript=` shortcut for `jsm` |
-| `set_tags_firing_option_batch`            | Bulk set `tagFiringOption` on multiple tags |
-| `pause_tag` / `unpause_tag`               | Toggle a tag's `paused` flag (reversible) |
-| `update_tag_consent_settings`             | Set consent config for one tag                                                                                                                                                               |
-| `update_tags_consent_settings_batch`      | Set consent config for multiple tags                                                                                                                                                         |
-| `update_tag_html`                         | Replace the HTML body of a Custom HTML tag                                                                                                                                                   |
-| `update_tag_parameters`                   | Upsert raw GTM `parameter` dicts on any tag by `key` (works on every tag type — GA4 event/`gaawe`, config/`gtagjs`, conversion/`awct`, etc.)                                                 |
-| `update_trigger_parameters`               | Overwrite top-level fields on a trigger in place (`name`, `filter`, `customEventFilter`, `autoEventFilter`, `interval`, `limit`, `checkValidation`, `waitForTags`) — keeps trigger ID stable |
-| `update_trigger_filter`                   | Ergonomic wrapper to replace a trigger's filter list using `[{operator, lhs, rhs}, ...]`                                                                                                     |
-| `add_firing_trigger_to_tags_batch`        | Append a firing trigger to multiple tags                                                                                                                                                     |
-| `add_blocking_trigger_to_tags_batch`      | Append a blocking (exception) trigger to multiple tags                                                                                                                                       |
-| `set_firing_triggers_on_tags_batch`       | Replace the firing-trigger list on multiple tags                                                                                                                                             |
-| `remove_firing_trigger_from_tags_batch`   | Detach a specific firing trigger from multiple tags                                                                                                                                          |
-| `remove_blocking_trigger_from_tags_batch` | Detach a specific blocking trigger from multiple tags                                                                                                                                        |
+| Tool                                 | Description |
+| ------------------------------------ | ----------- |
+| `update_tag`                         | Partial in-place tag update (name, parameters, triggers, sequencing, firing option, consent, notes, paused, folder) — keeps tag ID |
+| `update_tag_parameters`              | Upsert raw GTM `parameter` dicts on any tag by `key` (Custom HTML body = key `html`; GA4 `eventParameters`, etc.) |
+| `update_gtm_variable`                | Update a variable in place; `javascript=` shortcut for `jsm` |
+| `update_trigger_parameters`          | Overwrite top-level trigger fields in place (`name`, `filter`, `customEventFilter`, `autoEventFilter`, `interval`, `limit`, `checkValidation`, `waitForTags`) — keeps trigger ID |
+| `update_trigger_filter`              | Replace a trigger's filter list using `[{operator, lhs, rhs}, ...]` |
+| `update_tags_triggers_batch`         | Add / remove / set firing or blocking triggers on many tags (`action`, `kind`) |
+| `update_tags_consent_settings_batch` | Set consent config on many tags |
+| `set_tags_firing_option_batch`       | Set `tagFiringOption` on many tags |
 
 ### Deleting
 
@@ -129,13 +118,34 @@ One of the two credential variables is required. Scopes requested:
 | --------------------- | -------------------------------- |
 | `delete_tag`          | Delete a tag from workspace      |
 | `delete_gtm_variable` | Delete a variable from workspace |
-| `delete_trigger`      | Delete a trigger from workspace  |
+| `delete_trigger`      | Delete a trigger from workspace (detach it from tags first) |
 
 ### Publishing
 
 | Tool                    | Description                                  |
 | ----------------------- | -------------------------------------------- |
 | `publish_gtm_container` | Create version from workspace and publish it |
+
+### Deprecated aliases (removed in the next release)
+
+Registered with one-line descriptions so existing prompts keep working. Hide
+them with `GTM_MCP_LEGACY_TOOLS=0`. Code: `src/gtm_mcp/legacy_tools.py`.
+
+| Tool                                      | Use instead |
+| ----------------------------------------- | ----------- |
+| `test_gtm_connection`                     | `list_gtm_containers` |
+| `get_gtm_live_version`                    | `get_gtm_container_version` (default `"live"`) |
+| `create_js_variable`                      | `create_gtm_variable(javascript=...)` |
+| `create_datalayer_variable`               | `create_gtm_variable(datalayer_key=...)` |
+| `update_tag_consent_settings`             | `update_tag(consent_status=..., consent_types=...)` |
+| `update_tag_html`                         | `update_tag_parameters([{"key": "html", ...}])` |
+| `pause_tag`                               | `update_tag(paused=True)` |
+| `unpause_tag`                             | `update_tag(paused=False)` |
+| `add_firing_trigger_to_tags_batch`        | `update_tags_triggers_batch(action="add")` |
+| `add_blocking_trigger_to_tags_batch`      | `update_tags_triggers_batch(action="add", kind="blocking")` |
+| `set_firing_triggers_on_tags_batch`       | `update_tags_triggers_batch(action="set")` |
+| `remove_firing_trigger_from_tags_batch`   | `update_tags_triggers_batch(action="remove")` |
+| `remove_blocking_trigger_from_tags_batch` | `update_tags_triggers_batch(action="remove", kind="blocking")` |
 
 ## Common Workflow Patterns
 
@@ -160,26 +170,26 @@ list_gtm_tags → review consentSettings → update_tags_consent_settings_batch
 ### 4. Create & Publish
 
 ```
-create_tag / create_trigger / create_datalayer_variable / create_js_variable → publish_gtm_container
+create_tag / create_trigger / create_gtm_variable → publish_gtm_container
 ```
 
 ### 5. Trigger Migration (swap firing trigger on existing tags)
 
 ```
-create_trigger(new) → set_firing_triggers_on_tags_batch(tag_ids, [new_trigger_id])
+create_trigger(new) → update_tags_triggers_batch(tag_ids, action="set", trigger_ids=[new])
     or
-create_trigger(new) → add_firing_trigger_to_tags_batch(tag_ids, new_trigger_id)
-                   → remove_firing_trigger_from_tags_batch(tag_ids, old_trigger_id)
-                   → delete_trigger(old_trigger_id)
+create_trigger(new) → update_tags_triggers_batch(tag_ids, action="add", trigger_ids=[new])
+                   → update_tags_triggers_batch(tag_ids, action="remove", trigger_ids=[old])
+                   → delete_trigger(old)
 ```
 
 ### 6. Consent-Aware Filtering (Exception / Guard Trigger)
 
 ```
-create_js_variable(is_<cohort>_source) → create_trigger(customEvent + filters on variable)
-    → add_blocking_trigger_to_tags_batch(tag_ids, trigger_id)   # exception
+create_gtm_variable(javascript=<is_<cohort>_source>) → create_trigger(customEvent + filters on variable)
+    → update_tags_triggers_batch(tag_ids, action="add", trigger_ids=[id], kind="blocking")  # exception
     or
-    → set_firing_triggers_on_tags_batch(tag_ids, [trigger_id])  # replace firing
+    → update_tags_triggers_batch(tag_ids, action="set", trigger_ids=[id])                   # replace firing
 ```
 
 ### 7. Version History / Change Audit ("what changed in version X?")
@@ -207,7 +217,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. The table below
 
 | Method                   | Implemented | Tool                                         |
 | ------------------------ | ----------- | -------------------------------------------- |
-| `containers.list`        | Yes         | `list_gtm_containers`, `test_gtm_connection` |
+| `containers.list`        | Yes         | `list_gtm_containers`                        |
 | `containers.get`         | No          | —                                            |
 | `containers.create`      | No          | —                                            |
 | `containers.update`      | No          | —                                            |
@@ -260,7 +270,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. The table below
 | ------------------ | ----------- | ------------------------------------------------------------------------------------- |
 | `variables.list`   | Yes         | `list_gtm_variables`                                                                  |
 | `variables.get`    | Yes         | `get_gtm_variable` |
-| `variables.create` | Yes         | `create_gtm_variable`, `create_js_variable`, `create_datalayer_variable(s_batch)` |
+| `variables.create` | Yes         | `create_gtm_variable`, `create_datalayer_variables_batch` |
 | `variables.update` | Yes         | `update_gtm_variable` |
 | `variables.delete` | Yes         | `delete_gtm_variable`                                                                 |
 | `variables.revert` | No          | —                                                                                     |
@@ -276,7 +286,7 @@ The GTM API v2 has 18 resource families with ~105 methods total. The table below
 | `versions.delete`     | No          | —                                                                                                  |
 | `versions.set_latest` | No          | —                                                                                                  |
 | `versions.undelete`   | No          | —                                                                                                  |
-| `versions.live`       | Yes         | `get_gtm_live_version`, `get_gtm_container_version` / `diff_gtm_container_versions` (via `"live"`) |
+| `versions.live`       | Yes         | `get_gtm_container_version` / `diff_gtm_container_versions` (via `"live"`) |
 
 ### accounts.containers.version_headers
 
