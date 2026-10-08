@@ -10,6 +10,8 @@ import logging
 import sys
 from datetime import datetime, timezone
 
+from mcp.server import FastMCP
+
 # Redirect logging to stderr
 logging.basicConfig(
     level=logging.INFO,
@@ -17,8 +19,6 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger("gtm-fastmcp-server")
-
-from mcp.server import FastMCP
 
 # Initialize the MCP server
 mcp = FastMCP("gtm-fastmcp-server")
@@ -37,7 +37,7 @@ def get_gtm_client():
             logger.info("GTM client initialized successfully")
         except Exception as e:
             logger.error(f"Failed to initialize GTM client: {e}")
-            raise Exception(f"GTM authentication failed: {e}. Please ensure GOOGLE_APPLICATION_CREDENTIALS is set.")
+            raise Exception(f"GTM authentication failed: {e}. Please ensure GOOGLE_APPLICATION_CREDENTIALS is set.") from e
     return gtm_client
 
 
@@ -51,7 +51,7 @@ async def _run(request):
 
 # Load GTM components
 try:
-    from gtm_components import GTMComponentTemplates, GTMWorkflowBuilder
+    import gtm_components  # noqa: F401 — availability probe; removed with the templates
     HAS_GTM_COMPONENTS = True
     logger.info("GTM components loaded successfully")
 except ImportError as e:

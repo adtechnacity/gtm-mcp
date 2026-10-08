@@ -1,5 +1,4 @@
 """Tests for gtm_components — regression tests for template correctness."""
-import pytest
 
 from gtm_components import GTMComponentTemplates, GTMWorkflowBuilder
 

@@ -10,6 +10,11 @@
 - `set_tags_firing_option_batch`, `pause_tag`, `unpause_tag` tools.
 - `tests/` pytest suite (mocked GTM client): `uv run pytest tests/ -q`.
 
+### Fixed
+
+- Docker image now installs from `uv.lock` (`uv sync --frozen`). The old `requirements.txt` (removed) resolved to `mcp` 2.x, which fails to import `FastMCP`, and lacked `google-auth-oauthlib`.
+- Pinned `mcp<2` in `pyproject.toml`; added a ruff config (`E4,E7,E9,F,B`) and fixed its findings.
+
 ## [0.5.0] - 2026-06-10
 
 ### Added
