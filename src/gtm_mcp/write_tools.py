@@ -48,8 +48,7 @@ async def create_tag(
 
     The ``parameter`` list uses GTM's native format — each item is a dict with
     ``key``, ``value``, and ``type`` (usually ``"template"``). Use ``get_gtm_tag``
-    on an existing tag to see the parameter format for a given tag type, or use
-    ``generate_ga4_template`` for GA4-specific templates.
+    on an existing tag to see the parameter format for a given tag type.
 
     Args:
         account_id: GTM Account ID
