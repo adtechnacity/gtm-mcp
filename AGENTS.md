@@ -134,27 +134,6 @@ One of the two credential variables is required. Scopes requested:
 | `publish_gtm_version`      | Publish an existing version — use an older one to roll back |
 | `publish_gtm_container`    | Create a version from a workspace and publish it (one step) |
 
-### Deprecated aliases (removed in the next release)
-
-Registered with one-line descriptions so existing prompts keep working. Hide
-them with `GTM_MCP_LEGACY_TOOLS=0`. Code: `src/gtm_mcp/legacy_tools.py`.
-
-| Tool                                      | Use instead |
-| ----------------------------------------- | ----------- |
-| `test_gtm_connection`                     | `list_gtm_containers` |
-| `get_gtm_live_version`                    | `get_gtm_container_version` (default `"live"`) |
-| `create_js_variable`                      | `create_gtm_variable(javascript=...)` |
-| `create_datalayer_variable`               | `create_gtm_variable(datalayer_key=...)` |
-| `update_tag_consent_settings`             | `update_tag(consent_status=..., consent_types=...)` |
-| `update_tag_html`                         | `update_tag_parameters([{"key": "html", ...}])` |
-| `pause_tag`                               | `update_tag(paused=True)` |
-| `unpause_tag`                             | `update_tag(paused=False)` |
-| `add_firing_trigger_to_tags_batch`        | `update_tags_triggers_batch(action="add")` |
-| `add_blocking_trigger_to_tags_batch`      | `update_tags_triggers_batch(action="add", kind="blocking")` |
-| `set_firing_triggers_on_tags_batch`       | `update_tags_triggers_batch(action="set")` |
-| `remove_firing_trigger_from_tags_batch`   | `update_tags_triggers_batch(action="remove")` |
-| `remove_blocking_trigger_from_tags_batch` | `update_tags_triggers_batch(action="remove", kind="blocking")` |
-
 ## Common Workflow Patterns
 
 ### 1. Discovery

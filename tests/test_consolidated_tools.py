@@ -1,14 +1,9 @@
-"""update_tags_triggers_batch, create_gtm_variable(datalayer_key), legacy aliases."""
-import asyncio
-import os
-import subprocess
-import sys
+"""update_tags_triggers_batch, create_gtm_variable(datalayer_key), update_tag no-op."""
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from conftest import tool_error
-from gtm_mcp import legacy_tools
 from gtm_mcp.helpers import _modify_tag_triggers_batch
 
 WS = "accounts/1/containers/2/workspaces/54"
@@ -157,124 +152,8 @@ class TestCreateDatalayerShortcut:
 
 
 # ---------------------------------------------------------------------------
-# Legacy aliases
-# ---------------------------------------------------------------------------
-
-class TestLegacyAliases:
-    @pytest.mark.asyncio
-    async def test_batch_alias_delegates_with_action_and_kind(self):
-        with patch("gtm_mcp.legacy_tools.write_tools.update_tags_triggers_batch",
-                   new=AsyncMock(return_value={"status": "success"})) as target:
-            await legacy_tools.remove_blocking_trigger_from_tags_batch("1", "2", ["10"], "5")
-        target.assert_awaited_once_with("1", "2", ["10"], "remove", ["5"], "blocking", None)
-
-    @pytest.mark.asyncio
-    async def test_create_js_variable_delegates(self):
-        with patch("gtm_mcp.legacy_tools.write_tools.create_gtm_variable",
-                   new=AsyncMock(return_value={"status": "success"})) as target:
-            await legacy_tools.create_js_variable("1", "2", "JS - x", "function(){return 1}")
-        target.assert_awaited_once_with(
-            "1", "2", "JS - x", javascript="function(){return 1}", workspace_id=None)
-
-    def test_descriptions_are_one_line_and_name_the_replacement(self):
-        from gtm_mcp.server import mcp
-        legacy = [t for t in asyncio.run(mcp.list_tools()) if hasattr(legacy_tools, t.name)]
-        assert len(legacy) == 13
-        for t in legacy:
-            assert t.description.startswith("Deprecated: use ``"), t.name
-            assert "\n" not in t.description.strip(), t.name
-
-    def test_env_flag_hides_them(self):
-        from gtm_mcp.server import mcp
-        names = {t.name for t in asyncio.run(mcp.list_tools())}
-        current = sorted(n for n in names if not hasattr(legacy_tools, n))
-        code = ("import asyncio; from gtm_mcp.server import mcp; "
-                "print(sorted(t.name for t in asyncio.run(mcp.list_tools())))")
-        out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
-                             env={**os.environ, "GTM_MCP_LEGACY_TOOLS": "0"}, check=True)
-        assert out.stdout.strip() == str(current)
-
-
-# ---------------------------------------------------------------------------
 # Legacy aliases keep their old response shapes
 # ---------------------------------------------------------------------------
-
-def _variables_client():
-    client = MagicMock()
-    variables = client.service.accounts().containers().workspaces().variables()
-    variables.create.side_effect = lambda parent, body: MagicMock(
-        execute=MagicMock(return_value={**body, "variableId": "7", "path": f"{parent}/variables/7"}))
-    return client
-
-
-class TestLegacyShapes:
-    @pytest.mark.asyncio
-    async def test_test_gtm_connection(self):
-        containers = [{"name": f"C{i}", "containerId": str(i), "publicId": "GTM-X"} for i in range(7)]
-        with patch("gtm_mcp.legacy_tools.read_tools.list_gtm_containers",
-                   new=AsyncMock(return_value={"status": "success", "containers": containers})):
-            result = await legacy_tools.test_gtm_connection("1")
-        assert result == {
-            "status": "success", "message": "GTM API connection successful", "account_id": "1",
-            "containers_found": 7,
-            "containers": [{"name": f"C{i}", "containerId": str(i)} for i in range(5)],
-        }
-
-    @pytest.mark.parametrize("alias, kwargs, extra_keys, message", [
-        ("create_js_variable", {"javascript": "function(){return 1}"}, set(),
-         "Custom JavaScript variable 'V' created successfully"),
-        ("create_datalayer_variable", {"datalayer_key": "k"}, {"datalayer_key"},
-         "Data Layer Variable 'V' created successfully"),
-    ])
-    @pytest.mark.asyncio
-    async def test_variable_aliases(self, alias, kwargs, extra_keys, message):
-        with patch("gtm_mcp.write_tools.get_gtm_client", return_value=_variables_client()), \
-             patch("gtm_mcp.write_tools._resolve_workspace_parent",
-                   new=AsyncMock(return_value=("54", WS))):
-            result = await getattr(legacy_tools, alias)("1", "2", "V", *kwargs.values())
-        assert {"status", "message", "variable_id", "variable_name", "path"} | extra_keys <= set(result)
-        assert result["message"] == message
-
-    @pytest.mark.asyncio
-    async def test_update_tag_consent_settings(self):
-        client, _ = _tags_client({"10": {"name": "A", "consentSettings": {"consentStatus": "notSet"}}})
-        with patch("gtm_mcp.write_tools.get_gtm_client", return_value=client), \
-             patch("gtm_mcp.write_tools._resolve_workspace_parent",
-                   new=AsyncMock(return_value=("54", WS))):
-            result = await legacy_tools.update_tag_consent_settings(
-                "1", "2", "10", "needed", ["ad_storage"])
-        assert result["message"] == "Consent settings updated for tag 'A'"
-        assert result["consent_status"] == "needed"
-        assert result["consent_types"] == ["ad_storage"]
-
-    @pytest.mark.parametrize("alias, args, tags, label, reason", [
-        ("add_firing_trigger_to_tags_batch", ("5",),
-         {"10": {"firingTriggerId": []}, "11": {"firingTriggerId": ["5"]}},
-         "firing_triggers", "Trigger already attached"),
-        ("add_blocking_trigger_to_tags_batch", ("5",),
-         {"10": {}, "11": {"blockingTriggerId": ["5"]}},
-         "blocking_triggers", "Blocking trigger already attached"),
-        ("remove_firing_trigger_from_tags_batch", ("5",),
-         {"10": {"firingTriggerId": ["5"]}, "11": {}},
-         "firing_triggers", "Firing trigger not attached"),
-        ("remove_blocking_trigger_from_tags_batch", ("5",),
-         {"10": {"blockingTriggerId": ["5"]}, "11": {}},
-         "blocking_triggers", "Blocking trigger not attached"),
-        ("set_firing_triggers_on_tags_batch", (["5"],),
-         {"10": {"firingTriggerId": []}, "11": {"firingTriggerId": ["5"]}},
-         "firing_triggers", "Firing triggers already match"),
-    ])
-    @pytest.mark.asyncio
-    async def test_batch_aliases(self, alias, args, tags, label, reason):
-        client, _ = _tags_client(tags)
-        with patch("gtm_mcp.write_tools.get_gtm_client", return_value=client), \
-             patch("gtm_mcp.write_tools._resolve_workspace_parent",
-                   new=AsyncMock(return_value=("54", WS))):
-            result = await getattr(legacy_tools, alias)("1", "2", ["10", "11"], *args)
-        (updated,), (skipped,) = result["updated"], result["skipped"]
-        assert label in updated and "firingTriggerId" not in updated and "blockingTriggerId" not in updated
-        assert skipped == {"tag_id": "11", "tag_name": None, "reason": reason}
-
 
 class TestUpdateTagNoop:
     @pytest.mark.asyncio
@@ -287,3 +166,16 @@ class TestUpdateTagNoop:
             result = await update_tag("1", "2", "10", paused=True, notes="n")
         assert result["status"] == "noop"
         tags.update.assert_not_called()
+
+    @pytest.mark.parametrize("before, paused", [(False, True), (True, False)])
+    @pytest.mark.asyncio
+    async def test_pause_and_unpause_preserve_other_fields(self, before, paused):
+        from gtm_mcp.write_tools import update_tag
+        tag = {"name": "A", "paused": before, "firingTriggerId": ["5"], "parameter": [{"key": "k"}]}
+        client, tags = _tags_client({"10": tag})
+        with patch("gtm_mcp.write_tools.get_gtm_client", return_value=client), \
+             patch("gtm_mcp.write_tools._resolve_workspace_parent",
+                   new=AsyncMock(return_value=("54", WS))):
+            result = await update_tag("1", "2", "10", paused=paused)
+        assert result["status"] == "success"
+        assert tags.update.call_args.kwargs["body"] == {**tag, "paused": paused}
